@@ -1,0 +1,127 @@
+// backend/07_Entry.gs.js
+// CANONICAL SOURCE. `backend/*.gs` is generated from this file by `npm run build`.
+// The only file that deals with HTTP event objects.
+//
+// Companion manifest: backend/appsscript.json. It requests
+// spreadsheets.currentonly (NOT .../auth/spreadsheets) because this script only
+// ever touches its own bound sheet — ask for the narrowest scope that works.
+
+import { handleRequest } from './05_Api.gs.js';
+import { verifyToken, getApiToken, setApiToken } from './02_Auth.gs.js';
+import {
+  readPockets, readTransactions, getReportSheet, ensureSheets,
+} from './03_Sheets.gs.js';
+import { applyRollover, shouldRollover, monthKey } from './04_Rollover.gs.js';
+import { renderReport } from './06_Report.gs.js';
+import { writeBalance } from './03_Sheets.gs.js';
+import { USERS, SHEETS } from './00_Config.gs.js';
+
+/** Serialize a response as ContentService JSON. */
+function json(res) {
+  return ContentService.createTextOutput(JSON.stringify(res))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/** Normalise an Apps Script event into { action, params, parseError }. */
+export function parseRequest(e, method) {
+  const out = { action: null, params: {}, parseError: false };
+  if (!e) return out;
+
+  if (method === 'POST') {
+    const raw = (e.postData && e.postData.contents) || '';
+    if (!raw) { out.action = 'getState'; return out; }
+    try {
+      const body = JSON.parse(raw);
+      const { action, ...params } = body || {};
+      out.action = action || 'getState';
+      out.params = params;
+    } catch (_) {
+      out.parseError = true;
+    }
+    return out;
+  }
+
+  const p = e.parameter || {};
+  out.action = p.action || 'getState';
+  out.params = p;
+  return out;
+}
+
+/**
+ * GET entry point.
+ *
+ * NOTE ON TRANSPORT (§0): GET is CORS-safelisted, so no preflight is sent and
+ * fetch's default redirect:'follow' handles Apps Script's 302 to
+ * script.googleusercontent.com. `token` arrives as a query parameter.
+ */
+function doGet(e) {
+  const r = parseRequest(e, 'GET');
+  return json(handleRequest({ action: r.action, params: r.params }));
+}
+
+/**
+ * POST entry point.
+ *
+ * CRITICAL (§0): the client sends Content-Type: text/plain, NOT application/json.
+ * With application/json the browser sends a CORS preflight, Apps Script has no
+ * doOptions, the preflight 405s, and the whole request fails. text/plain is
+ * CORS-safelisted so no preflight happens. We JSON.parse the raw body ourselves.
+ */
+function doPost(e) {
+  const r = parseRequest(e, 'POST');
+  if (r.parseError) {
+    return json({ ok: false, error: 'INVALID_JSON', message: 'Request body was not valid JSON.' });
+  }
+  return json(handleRequest({ action: r.action, params: r.params }));
+}
+
+/* ------------------------------------------------------------- triggers -- */
+
+/**
+ * Daily trigger. Idempotent: does nothing if the month has not changed, so a
+ * missed run on the 1st self-heals on the 2nd rather than skipping a reset.
+ */
+function dailyRollover() {
+  const props = PropertiesService.getScriptProperties();
+  const lastKey = props.getProperty('LAST_ROLLOVER_KEY');
+  const now = new Date();
+
+  if (shouldRollover(lastKey, now)) {
+    const pockets = readPockets({ includeArchived: true });
+    const { pockets: reset, resetCount } = applyRollover(pockets);
+    for (const p of reset) {
+      if (p.status === 'Active' && p.balance !== p.limit) writeBalance(p.id, p.limit);
+    }
+    props.setProperty('LAST_ROLLOVER_KEY', monthKey(now));
+    Logger.log('PocketBudget rollover: reset ' + resetCount + ' pockets for ' + monthKey(now));
+  }
+
+  renderReport(getReportSheet(), {
+    pockets: readPockets(),
+    transactions: readTransactions(),
+    now,
+  });
+}
+
+/**
+ * One-time bootstrap, run from the Apps Script editor:
+ *   1. Setup ▸ copy this function, paste into 07_Entry.gs.js, save.
+ *   2. Run setup() once and authorise.
+ *   3. Delete the call from any menu if you don't want one.
+ */
+function setup() {
+  const sheets = ensureSheets();
+  const existing = getApiToken();
+  const token = existing || Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  if (!existing) setApiToken(token);
+
+  ScriptApp.newTrigger('dailyRollover')
+    .timeBased()
+    .everyDays(1)
+    .atHour(2)
+    .create();
+
+  Logger.log('Sheets ready: ' + sheets.join(', '));
+  Logger.log('Users: ' + USERS.join(', '));
+  Logger.log('Household token (copy this into the PWA setup screen): ' + token);
+}
