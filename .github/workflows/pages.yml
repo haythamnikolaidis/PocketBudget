@@ -1,0 +1,80 @@
+name: Deploy PocketBudget to GitHub Pages
+
+# Two jobs:
+#   verify  — build the Apps Script bundle and run the full test suite.
+#             A red test suite BLOCKS the deploy, so broken code never reaches
+#             users' phones.
+#   deploy  — publish app/ to GitHub Pages.
+#
+# Only app/ is published. backend/ and tests/ never leave the repository, which
+# keeps the source of the token check and the data layer out of the public site.
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two deploys at once — they would race on the Pages environment.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        # No runtime dependencies; npm ci keeps CI honest if that ever changes.
+        run: npm ci || npm install
+
+      - name: Build the Apps Script bundle
+        run: npm run build
+
+      - name: Reject a bundle containing leftover ES module syntax
+        # A stray `import`/`export` means the bundle will not load in Apps
+        # Script. grep alone cannot see a broken multi-line import, so also
+        # compile-check it below.
+        run: |
+          if grep -nE '^(import|export)\b|^\} from' backend/Backend.bundle.gs; then
+            echo "::error::Backend.bundle.gs still contains module syntax"
+            exit 1
+          fi
+
+      - name: Compile-check the generated bundle
+        run: cp backend/Backend.bundle.gs "$RUNNER_TEMP/bundle.js" && node --check "$RUNNER_TEMP/bundle.js"
+
+      - name: Verify the PWA icons
+        run: node app/icons/verify-icons.mjs
+
+      - name: Run the test suite
+        run: npm test
+
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: app
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
