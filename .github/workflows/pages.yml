@@ -39,11 +39,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
+          # No `cache: npm` — this project has zero runtime dependencies and so
+          # has no package-lock.json, which npm caching requires. Enabling it made
+          # setup-node fail before a single check ran.
 
-      - name: Install dependencies
-        # No runtime dependencies; npm ci keeps CI honest if that ever changes.
-        run: npm ci || npm install
+      - name: Confirm the dependency situation
+        # There are no runtime or dev dependencies by design: the whole toolchain
+        # is Node's built-in test runner. This step fails loudly if that ever
+        # stops being true, rather than silently installing whatever appears.
+        run: |
+          if [ -f package-lock.json ]; then
+            echo "::error::package-lock.json appeared — add a real install step"
+            exit 1
+          fi
+          node --version
 
       - name: Build the Apps Script bundle
         run: npm run build
