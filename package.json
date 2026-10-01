@@ -1,0 +1,14 @@
+{
+  "name": "pocketbudget",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Mobile-first PWA for couples to share monthly pocket budgets.",
+  "scripts": {
+    "build": "node backend/build.mjs",
+    "test": "node --test",
+    "test:watch": "node --test --watch",
+    "check": "npm run build && npm test"
+  },
+  "engines": { "node": ">=20" }
+}
