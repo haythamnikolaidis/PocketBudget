@@ -38,12 +38,24 @@ command -v gh >/dev/null 2>&1 || { echo "error: gh not found; install GitHub CLI
 
 # Resolve the run.
 if [ -z "$RUN_ID" ]; then
-  echo "[fetch] finding the latest run on master..."
-  RUN_ID="$(gh run list --workflow pages.yml --branch master --status success \
-            --limit 1 --json databaseId --jq '.[0].databaseId')"
+  echo "[fetch] finding the latest run on master that published a bundle..."
+  # Deliberately NOT filtering on run conclusion. The artifact is uploaded by the
+  # `verify` job, which can succeed while `deploy` fails (e.g. Pages not enabled
+  # on the repo yet). Requiring the whole run to be green would make this script
+  # useless in exactly that situation. The artifact's existence IS the guarantee:
+  # it is uploaded only after every check in `verify` passed.
+  for candidate in $(gh run list --workflow pages.yml --branch master --limit 10 \
+                      --json databaseId --jq '.[].databaseId'); do
+    found="$(gh api "repos/{owner}/{repo}/actions/runs/${candidate}/artifacts" \
+             --jq "[.artifacts[] | select(.name | startswith(\"backend-bundle-\"))] | length" 2>/dev/null || echo 0)"
+    if [ "${found:-0}" -gt 0 ] 2>/dev/null; then
+      RUN_ID="$candidate"
+      break
+    fi
+  done
   [ -n "$RUN_ID" ] || {
-    echo "error: no successful 'pages.yml' run found on master yet." >&2
-    echo "       Push to master, or run the workflow manually from the Actions tab." >&2
+    echo "error: no run on master has published a backend-bundle-* artifact yet." >&2
+    echo "       Push to master, or trigger the workflow from the Actions tab." >&2
     exit 1
   }
 fi
@@ -64,8 +76,10 @@ trap 'rm -rf "$TMP"' EXIT
 echo "[fetch] downloading artifact from run ${RUN_ID}..."
 gh api "repos/{owner}/{repo}/actions/artifacts/${ARTIFACT_ID}/zip" > "$TMP/bundle.zip"
 
-command -v unzip >/dev/null 2>&1 || { echo "error: unzip not found" >&2; exit 1; }
-unzip -o -q "$TMP/bundle.zip" -d "$TMP/out"
+# Extract without depending on `unzip`, which is absent on some minimal images.
+# Python's stdlib zipfile is always available on the machines this runs on.
+python3 -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" \
+  "$TMP/bundle.zip" "$TMP/out"
 
 BUNDLE="$(find "$TMP/out" -name 'Backend.bundle.gs' -print -quit)"
 [ -n "$BUNDLE" ] || { echo "error: Backend.bundle.gs missing from the artifact" >&2; exit 1; }
