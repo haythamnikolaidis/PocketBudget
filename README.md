@@ -88,7 +88,10 @@ docs/           product brief, implementation plan, deployment, smoke test
 Apps Script has no module system and its editor only reads `.gs` files, so:
 
 - **Edit `backend/*.gs.js`** — these are the canonical ES modules.
-- **`npm run build`** generates `backend/*.gs` and `Backend.bundle.gs`.
+- **CI publishes the bundle as an artifact** after compiling it and running the
+  full suite. Fetch it with `scripts/fetch-bundle.sh` — that is the exact file
+  CI proved loads, not a local rebuild.
+- **`npm run build`** generates the same thing locally if you prefer.
 - **Paste `Backend.bundle.gs` into the Apps Script editor.**
 - Generated `.gs` files are gitignored. Never hand-edit one.
 
@@ -139,6 +142,7 @@ Coverage worth knowing about:
 | `npm run check` | build + test (what CI runs) |
 | `npm run dev` | serve `app/` on :8080 |
 | `node app/icons/verify-icons.mjs` | assert the PWA icons are the right size |
+| `scripts/fetch-bundle.sh` | download the CI-verified bundle for Apps Script |
 | `bash scripts/commit.sh --paths a b "msg"` | serialized commit helper for concurrent agents |
 
 ---

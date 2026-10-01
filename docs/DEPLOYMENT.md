@@ -23,22 +23,37 @@ From a blank Google Sheet to a running app on two phones.
 
 ---
 
-## 3. Paste the backend
+## 3. Get the backend bundle
+
+The bundle is published as a CI artifact, so you do not build it by hand:
 
 ```bash
-npm run build
+scripts/fetch-bundle.sh
 ```
 
-This writes `backend/Backend.bundle.gs` (all 8 modules flattened into one
-classic script).
+That downloads the **exact file CI compile-checked and tested** — not a local
+rebuild that might differ. It writes `backend/Backend.bundle.gs`.
 
-1. Open `Backend.bundle.gs`, copy **everything**.
+If you have not enabled the workflow yet, or prefer to build locally:
+
+```bash
+npm run build          # same output, built on your machine
+```
+
+Either way the result is identical, because both run the same `backend/build.mjs`.
+
+1. Open `backend/Backend.bundle.gs`, copy **everything**.
 2. In the Apps Script editor, open `Code.gs`, select all, delete, paste.
 3. Delete the default `function myFunction() {}` stub if it survived.
 4. Save (⌘/Ctrl + S).
 
 > Paste the **bundle**, not the individual `.gs` files. The bundle is what
 > `build.mjs` generates and it is the only thing guaranteed to load.
+>
+> You can also download it from the GitHub Actions UI: open the latest
+> successful **Build, verify, and deploy** run, scroll to *Artifacts*, and
+> download `backend-bundle-<sha>`. It contains `Backend.bundle.gs` and
+> `appsscript.json`.
 
 ---
 

@@ -1,13 +1,19 @@
-name: Deploy PocketBudget to GitHub Pages
+name: Build, verify, and deploy
 
 # Two jobs:
-#   verify  — build the Apps Script bundle and run the full test suite.
-#             A red test suite BLOCKS the deploy, so broken code never reaches
-#             users' phones.
+#   verify  — build the Apps Script bundle, check it, run the full test suite,
+#             then publish the bundle as a downloadable artifact. A red suite
+#             BLOCKS the deploy, so broken code never reaches users' phones.
 #   deploy  — publish app/ to GitHub Pages.
 #
-# Only app/ is published. backend/ and tests/ never leave the repository, which
-# keeps the source of the token check and the data layer out of the public site.
+# Why the bundle is an artifact: pasting code into the Apps Script editor by
+# hand is the single most error-prone step in deployment. The artifact is the
+# EXACT file that `verify` compiled and tested — not a rebuild — so what you
+# paste is provably the build CI proved loads.
+#
+# Only app/ is published to Pages. backend/ and tests/ never leave the
+# repository, which keeps the data layer out of the public site. The backend
+# leaves only as the single bundle file, via the artifact.
 
 on:
   push:
@@ -55,11 +61,35 @@ jobs:
       - name: Compile-check the generated bundle
         run: cp backend/Backend.bundle.gs "$RUNNER_TEMP/bundle.js" && node --check "$RUNNER_TEMP/bundle.js"
 
+      - name: Assert the entry points Apps Script needs are present
+        # Without these the deployment 404s at runtime with
+        # "Script function not found: doGet".
+        run: |
+          for fn in doGet doPost dailyRollover setup; do
+            grep -qE "^function ${fn}\b" backend/Backend.bundle.gs || {
+              echo "::error::Backend.bundle.gs is missing ${fn}()"
+              exit 1
+            }
+          done
+          echo "all entry points present"
+
       - name: Verify the PWA icons
         run: node app/icons/verify-icons.mjs
 
       - name: Run the test suite
         run: npm test
+
+      - name: Publish the verified bundle
+        # Uploaded only after every check above passed, so the artifact is
+        # never a build that failed validation.
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-bundle-${{ github.sha }}
+          path: |
+            backend/Backend.bundle.gs
+            backend/appsscript.json
+          retention-days: 90
+          if-no-files-found: error
 
   deploy:
     needs: verify
