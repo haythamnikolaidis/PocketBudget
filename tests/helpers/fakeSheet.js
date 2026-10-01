@@ -11,6 +11,7 @@ export function createSheet(name, rows = []) {
   return {
     name,
     _rows: rows.map((r) => [...r]),
+    _frozenRows: 0,
 
     getLastRow() { return this._rows.length; },
     getLastColumn() { return this._rows.reduce((m, r) => Math.max(m, r.length), 0); },
@@ -49,6 +50,19 @@ export function createSheet(name, rows = []) {
     },
 
     appendRow(arr) { this._rows.push([...arr]); return this; },
+
+    // Needed by ensureSheets(), which is otherwise untestable against the fake.
+    setFrozenRows(n) { this._frozenRows = n; return this; },
+
+    insertSheet(name) {
+      const created = createSheet(name, []);
+      created._inserted = true;
+      this._sheets.push(created);
+      return created;
+    },
+
+    /** Registered so a fake spreadsheet can answer insertSheet(name). */
+    _sheets: [],
 
     deleteRow(row) {
       // Sheet rows are 1-based and include the header, so index is row-1.
