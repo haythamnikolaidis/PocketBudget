@@ -5,8 +5,6 @@
 // PRODUCT_BRIEF.md §5 decision 1. The upgrade path to verified Google ID tokens
 // is documented in IMPLEMENTATION_PLAN.md §9.
 
-import { fail } from './01_Utils.gs.js';
-
 /** Script Properties key holding the household token. */
 export const TOKEN_PROPERTY = 'API_TOKEN';
 
