@@ -5,3 +5,6 @@ node_modules/
 .DS_Store
 .idea/
 .vscode/
+
+# Lock dir for scripts/commit.sh (concurrent-agent serialization)
+.pocketbudget-commit.lock
