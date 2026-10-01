@@ -17,9 +17,9 @@ From a blank Google Sheet to a running app on two phones.
 2. **Project Settings** (gear icon) → tick **Show "appsscript.json" manifest file**.
 3. Open `appsscript.json` and replace its contents with the repo's
    `backend/appsscript.json`.
-4. Confirm the timezone matches the household — it defaults to
-   `Africa/Johannesburg`. This matters: the rollover trigger runs at 02:00 local
-   and the run-rate day count depends on it.
+4. The timezone is set to `Africa/Johannesburg` and is confirmed correct. This
+   matters: the rollover trigger runs at 02:00 local and the run-rate day count
+   depends on it. Only change it if the household moves timezones.
 
 ---
 

@@ -3834,9 +3834,8 @@ Stated so nobody re-litigates them mid-build:
 
 ## 16. Open questions
 
-1. **Timezone.** `appsscript.json` sets `Africa/Johannesburg`. Rollover runs at 02:00 local. Confirm
-   this matches the household's actual timezone — a UTC spreadsheet with a SA trigger will reset at
-   04:00 local and the run-rate day count will drift.
+1. ~~**Timezone.**~~ **RESOLVED: `Africa/Johannesburg` confirmed correct by the product owner.**
+   Rollover runs at 02:00 local and the run-rate day count depends on it. No change needed.
 2. **Month-over-month history.** The trend chart needs more than one month of data to be useful.
    Task 25 appends a history row per run. Confirm that is acceptable versus backfilling.
 3. **Rollover on a limit change.** If a spouse raises a limit mid-month, should the extra room apply
