@@ -8,3 +8,7 @@ node_modules/
 
 # Lock dir for scripts/commit.sh (concurrent-agent serialization)
 .pocketbudget-commit.lock
+
+# Generated from backend/*.gs.js by `npm run build` — never hand-edit.
+backend/*.gs
+backend/Backend.bundle.gs
