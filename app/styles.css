@@ -1,0 +1,65 @@
+/* app/styles.css
+ * Minimal shell styles. Tailwind covers layout and colour; this file only
+ * handles the few things utilities express awkwardly.
+ */
+
+:root {
+  --ink: #0f172a;
+  --accent: #10b981;
+}
+
+html {
+  /* Avoid the iOS white flash before the shell paints. */
+  background: var(--ink);
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  /* Stop iOS from zooming when a numeric field gains focus. */
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Inputs at 16px+ stop Safari from zooming in on focus. */
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="url"] {
+  font-size: 16px;
+}
+
+/* Hide the number input spinners: the decimal keypad supplies the digits. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* The active tab is marked with more than colour alone. */
+.tab[aria-current="page"] {
+  color: var(--accent);
+}
+
+/* A thin, unobtrusive scrollbar inside feed containers. */
+.scroll-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

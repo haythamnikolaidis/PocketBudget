@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8">
+  <!-- viewport-fit=cover is required for the notch/home-indicator safe-area insets. -->
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>PocketBudget</title>
+  <meta name="description" content="Shared pocket budgets for two spouses.">
+
+  <!-- PWA / install -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0f172a">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="PocketBudget">
+
+  <!--
+    Tailwind via CDN: no build step, which is the whole point of this project.
+    For a two-household internal app this is a deliberate trade. Swap for a
+    compiled stylesheet before this app is ever exposed publicly.
+  -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: '#0f172a',
+            accent: '#10b981',
+          },
+          // Respect the notch and the home indicator.
+          spacing: { 'safe-bottom': 'env(safe-area-inset-bottom)' },
+        },
+      },
+    };
+  </script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body class="bg-ink text-slate-100 antialiased min-h-screen">
+
+  <!-- Announced to screen readers; used for the brief's insufficient-funds alert. -->
+  <div id="toast" role="alert" aria-live="polite"
+       class="fixed inset-x-0 top-3 z-50 mx-auto hidden max-w-sm px-4"></div>
+
+  <!-- Shown when the deployed frontend is older than the backend. -->
+  <div id="version-banner" class="hidden bg-amber-500/20 px-4 py-2 text-center text-sm text-amber-200">
+    A new version is available. Close and reopen to update.
+  </div>
+
+  <main class="mx-auto w-full max-w-lg px-4 pb-28 pt-6">
+
+    <!-- ------------------------------------------------------ first-run setup -->
+    <section id="view-setup" class="hidden" aria-labelledby="setup-heading">
+      <h1 id="setup-heading" class="text-2xl font-semibold">Set up PocketBudget</h1>
+      <p class="mt-2 text-sm text-slate-400">
+        Paste the Apps Script web app URL and your household token.
+      </p>
+
+      <form id="setup-form" class="mt-6 space-y-4" novalidate>
+        <label class="block">
+          <span class="text-sm text-slate-300">Web app URL</span>
+          <input id="setup-endpoint" name="endpoint" type="url" inputmode="url" autocomplete="off"
+                 spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec"
+                 class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm
+                        focus:border-accent focus:outline-none">
+        </label>
+
+        <label class="block">
+          <span class="text-sm text-slate-300">Household token</span>
+          <input id="setup-token" name="token" type="password" autocomplete="off" spellcheck="false"
+                 class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm
+                        focus:border-accent focus:outline-none">
+        </label>
+
+        <div class="flex gap-3">
+          <button type="submit" id="setup-save"
+                  class="flex-1 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-ink disabled:opacity-50">
+            Save
+          </button>
+          <button type="button" id="setup-test"
+                  class="rounded-lg border border-slate-700 px-4 py-2.5 text-sm disabled:opacity-50">
+            Test connection
+          </button>
+        </div>
+
+        <p id="setup-status" class="text-sm text-slate-400"></p>
+      </form>
+    </section>
+
+    <!-- ------------------------------------------------------------- home feed -->
+    <section id="view-home" class="hidden" aria-labelledby="home-heading">
+      <header class="flex items-baseline justify-between">
+        <h1 id="home-heading" class="text-2xl font-semibold">Pockets</h1>
+        <p id="home-summary" class="text-sm text-slate-400"></p>
+      </header>
+
+      <!-- Cached-state banner: never present a stale balance as if it were current. -->
+      <p id="stale-banner" class="mt-3 hidden rounded-lg bg-amber-500/15 px-3 py-2 text-xs text-amber-200"></p>
+
+      <div id="pockets" class="mt-4 space-y-3"></div>
+
+      <h2 class="mt-8 text-sm font-semibold uppercase tracking-wide text-slate-400">Recent activity</h2>
+      <div id="activity" class="mt-2 space-y-1"></div>
+    </section>
+
+    <!-- -------------------------------------------------------------- quick add -->
+    <section id="view-add" class="hidden" aria-labelledby="add-heading">
+      <h1 id="add-heading" class="text-2xl font-semibold">Add an expense</h1>
+
+      <form id="add-form" class="mt-6 space-y-4" novalidate>
+        <!--
+          Amount first and autofocused: it is the only field that is always
+          required, so the 5-second path is one number plus submit.
+          type="text" + inputmode="decimal" is deliberate — iOS renders
+          type="number" without a decimal keypad on several versions, which
+          would break the 5-second goal on exactly the devices that need it.
+        -->
+        <label class="block">
+          <span class="text-sm text-slate-300">Amount</span>
+          <input id="add-amount" name="amount" type="text" inputmode="decimal"
+                 autocomplete="off" enterkeyhint="done"
+                 class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-2xl
+                        font-semibold focus:border-accent focus:outline-none"
+                 placeholder="0.00">
+        </label>
+
+        <label class="block">
+          <span class="text-sm text-slate-300">Pocket</span>
+          <select id="add-pocket" name="pocketId"
+                  class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm
+                         focus:border-accent focus:outline-none"></select>
+        </label>
+
+        <label class="block">
+          <span class="text-sm text-slate-300">Note <span class="text-slate-500">(optional)</span></span>
+          <input id="add-note" name="note" type="text" autocomplete="off" maxlength="120"
+                 class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm
+                        focus:border-accent focus:outline-none"
+                 placeholder="Whole Foods">
+        </label>
+
+        <label class="block">
+          <span class="text-sm text-slate-300">Who</span>
+          <select id="add-user" name="user"
+                  class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm
+                         focus:border-accent focus:outline-none"></select>
+        </label>
+
+        <p id="add-reason" class="hidden rounded-lg bg-rose-500/15 px-3 py-2 text-sm text-rose-200"></p>
+
+        <button type="submit" id="add-submit"
+                class="w-full rounded-lg bg-accent px-4 py-3 text-base font-semibold text-ink disabled:opacity-50">
+          Save expense
+        </button>
+      </form>
+    </section>
+
+    <!-- -------------------------------------------------------------- management -->
+    <section id="view-manage" class="hidden" aria-labelledby="manage-heading">
+      <h1 id="manage-heading" class="text-2xl font-semibold">Pockets</h1>
+      <div id="manage-list" class="mt-4 space-y-3"></div>
+
+      <h2 class="mt-8 text-sm font-semibold uppercase tracking-wide text-slate-400">New pocket</h2>
+      <form id="manage-form" class="mt-3 space-y-3" novalidate>
+        <input id="manage-name" name="name" type="text" placeholder="Groceries" autocomplete="off"
+               class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm
+                      focus:border-accent focus:outline-none">
+        <input id="manage-account" name="account" type="text" placeholder="Bank account (optional)" autocomplete="off"
+               class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm
+                      focus:border-accent focus:outline-none">
+        <input id="manage-limit" name="limit" type="text" inputmode="decimal" placeholder="Monthly limit"
+               autocomplete="off"
+               class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm
+                      focus:border-accent focus:outline-none">
+        <p id="manage-reason" class="hidden rounded-lg bg-rose-500/15 px-3 py-2 text-sm text-rose-200"></p>
+        <button type="submit" id="manage-submit"
+                class="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-ink disabled:opacity-50">
+          Create pocket
+        </button>
+      </form>
+
+      <p class="mt-8 text-xs text-slate-500">
+        Archiving hides a pocket but keeps its transactions. Deleting is intentionally not offered.
+      </p>
+    </section>
+
+  </main>
+
+  <!-- ---------------------------------------------------------- bottom tab bar -->
+  <nav class="fixed inset-x-0 bottom-0 z-40 border-t border-slate-800 bg-ink/95 backdrop-blur"
+       style="padding-bottom: env(safe-area-inset-bottom)">
+    <div class="mx-auto grid max-w-lg grid-cols-3">
+      <button data-view="home" class="tab flex flex-col items-center gap-1 py-3 text-xs text-slate-400">
+        <span aria-hidden="true">▦</span> Pockets
+      </button>
+      <button data-view="add" class="tab flex flex-col items-center gap-1 py-3 text-xs text-slate-300">
+        <span aria-hidden="true">＋</span> Add
+      </button>
+      <button data-view="manage" class="tab flex flex-col items-center gap-1 py-3 text-xs text-slate-400">
+        <span aria-hidden="true">⚙</span> Manage
+      </button>
+    </div>
+  </nav>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
