@@ -18,6 +18,8 @@ name: Build, verify, and deploy
 on:
   push:
     branches: [master]
+  pull_request:
+    branches: [master]
   workflow_dispatch:
 
 permissions:
@@ -123,6 +125,9 @@ jobs:
 
   deploy:
     needs: verify
+    # Only deploy Pages from master. A pull request must verify and publish the
+    # bundle artifact, but must never touch the live site.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
