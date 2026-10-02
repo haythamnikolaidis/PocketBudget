@@ -44,8 +44,11 @@ if [ -z "$RUN_ID" ]; then
   # on the repo yet). Requiring the whole run to be green would make this script
   # useless in exactly that situation. The artifact's existence IS the guarantee:
   # it is uploaded only after every check in `verify` passed.
-  for candidate in $(gh run list --workflow pages.yml --branch master --limit 10 \
-                      --json databaseId --jq '.[].databaseId'); do
+  # Search PR runs too, not just master: when a fix is still in a pull request
+  # its bundle is the most current one, and the master branch may not have it yet.
+  # Ordering is newest-first, so the freshest run wins.
+  for candidate in $(gh run list --workflow pages.yml --limit 10 \
+                      --json databaseId,headBranch --jq '.[] | .databaseId'); do
     found="$(gh api "repos/{owner}/{repo}/actions/runs/${candidate}/artifacts" \
              --jq "[.artifacts[] | select(.name | startswith(\"backend-bundle-\"))] | length" 2>/dev/null || echo 0)"
     if [ "${found:-0}" -gt 0 ] 2>/dev/null; then
@@ -90,6 +93,16 @@ cp "$BUNDLE" "$OUT_DIR/Backend.bundle.gs"
 
 LINES="$(wc -l < "$OUT_DIR/Backend.bundle.gs" | tr -d ' ')"
 echo "[fetch] wrote $OUT_DIR/Backend.bundle.gs (${LINES} lines)"
+
+# Warn loudly if this artifact predates the local tree — that is how a stale
+# bundle gets pasted into Apps Script and fails in a confusing way.
+LOCAL_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+ART_SHA="$(gh api "repos/{owner}/{repo}/actions/runs/${RUN_ID}" --jq '.head_sha' 2>/dev/null || echo unknown)"
+if [ "$LOCAL_SHA" != "unknown" ] && [ "$ART_SHA" != "unknown" ] && [ "${ART_SHA:0:7}" != "$LOCAL_SHA" ]; then
+  echo
+  echo "WARNING: bundle came from commit ${ART_SHA:0:7} but your local tree is ${LOCAL_SHA}."
+  echo "         If you have newer local changes, rebuild with 'npm run build' instead."
+fi
 echo
 echo "Next:"
 echo "  1. Open the Apps Script editor (Extensions -> Apps Script from your Sheet)"

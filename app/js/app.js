@@ -912,3 +912,44 @@ export function boot(deps = {}) {
     clientVersion: CLIENT_VERSION,
   };
 }
+
+/* --------------------------------------------------------------- auto-boot -- */
+
+/**
+ * Start the app in a real browser.
+ *
+ * Without this, nothing ever ran: every view in index.html ships `hidden`, so a
+ * missing boot call renders a completely blank page. `boot()` takes every
+ * dependency by injection so it stays unit-testable under Node — this is the one
+ * place that binds it to the real window and document.
+ *
+ * Guarded so importing the module in a test (where there is no document) is a
+ * no-op rather than a crash.
+ */
+function autoBoot() {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return null;
+
+  const start = () => {
+    try {
+      return boot({ win: window, doc: document });
+    } catch (err) {
+      // A failure here would leave every view hidden, i.e. a blank page. Surface
+      // it rather than letting the user stare at nothing.
+      console.error('[PocketBudget] failed to start:', err);
+      const banner = document.getElementById('version-banner');
+      if (banner) {
+        banner.classList.remove('hidden');
+        banner.textContent = 'PocketBudget failed to start. Close and reopen, or check the console.';
+      }
+      return null;
+    }
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start, { once: true });
+    return null;
+  }
+  return start();
+}
+
+autoBoot();

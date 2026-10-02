@@ -20,7 +20,7 @@ import {
 import { monthKey } from './04_Rollover.gs.js';
 
 /** Milliseconds to wait for the script lock before giving up. */
-const LOCK_TIMEOUT_MS = 20_000;
+const LOCK_TIMEOUT_MS = 20000;
 
 /* --------------------------------------------------------------- helpers -- */
 
