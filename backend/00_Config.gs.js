@@ -21,4 +21,4 @@ export const ACTIONS = [
 export const SERVER_VERSION = '1.0.0';
 
 /** Largest single expense the API will accept, in cents ($1,000,000). */
-export const MAX_AMOUNT_CENTS = 100_000_000;
+export const MAX_AMOUNT_CENTS = 100000000;

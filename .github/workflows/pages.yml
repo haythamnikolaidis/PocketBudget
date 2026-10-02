@@ -70,6 +70,27 @@ jobs:
       - name: Compile-check the generated bundle
         run: cp backend/Backend.bundle.gs "$RUNNER_TEMP/bundle.js" && node --check "$RUNNER_TEMP/bundle.js"
 
+      - name: Reject syntax that the Apps Script V8 runtime cannot parse
+        # `node --check` is not sufficient. Apps Script's runtime rejects ES2021
+        # numeric separators (100_000_000) as "Unexpected Token ILLEGAL", which
+        # Node happily accepts. That shipped once and broke the paste into the
+        # Apps Script editor, so it is now checked explicitly.
+        run: |
+          if grep -nE '\b[0-9][0-9_]*_[0-9][0-9_]*\b' backend/Backend.bundle.gs; then
+            echo "::error::numeric separators found — Apps Script V8 rejects these as ILLEGAL"
+            exit 1
+          fi
+          # Other syntax Apps Script V8 rejects. Spread and rest (the `...`
+          # in `{ ...payload }`) ARE supported, so they are deliberately not
+          # checked — an earlier version of this guard flagged six false
+          # positives on legitimate spread syntax.
+          if grep -nE '\?\?=|\?\.[a-zA-Z_(]|\bstatic\s*\{|#[a-zA-Z_]+\s*=|\bawait\s+using\b' \
+               backend/Backend.bundle.gs; then
+            echo "::error::syntax newer than Apps Script V8 found in the bundle"
+            exit 1
+          fi
+          echo "bundle syntax is Apps Script compatible"
+
       - name: Assert the entry points Apps Script needs are present
         # Without these the deployment 404s at runtime with
         # "Script function not found: doGet".

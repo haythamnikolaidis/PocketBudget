@@ -318,7 +318,11 @@ test('activityRowHtml omits the note line and any dangling separator when the no
   assert.doesNotMatch(html, /pb-row__note[^>]*>\s*</, 'empty note element rendered');
   assert.doesNotMatch(html, /·\s*·/, 'dangling separator');
   assert.equal(html.split('·').length - 1, 1, 'exactly one separator, between pocket and day');
-  assert.ok(html.includes('Groceries') && html.includes('Today'), html);
+  // Deliberately not asserting a specific day label: the fixture timestamp is
+  // fixed, so whether it reads 'Today' or 'Yesterday' changes with the wall
+  // clock. Assert the pocket name and a day label is present instead.
+  assert.ok(html.includes('Groceries'), html);
+  assert.match(html, /pb-row__meta[^>]*>[^<]*·\s*(Today|Yesterday|[A-Z][a-z]{2} \d+)/, html);
 });
 
 test('activityRowHtml omits the note line when the note is nullish', () => {

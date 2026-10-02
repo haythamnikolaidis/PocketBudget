@@ -58,8 +58,21 @@ function stripImports(source) {
  *   export const X -> const X
  *   export function f -> function f
  */
+/**
+ * ES2021 numeric separators (100_000_000) are a Parse Error in the Apps Script
+ * V8 runtime — the underscore reads as an ILLEGAL token. Strip them in the
+ * generated output so the canonical sources can stay readable.
+ */
+function stripNumericSeparators(source) {
+  return source.replace(/\b(\d[\d_]*_\d[\d_]*)\b/g, (m) => m.replace(/_/g, ''));
+}
+
 function flatten(source, file) {
-  return stripImports(source)
+  // Order matters:
+  //  - stripNumericSeparators takes a STRING, so it runs while we still have one.
+  //  - stripImports returns an ARRAY of lines, so it runs after the string work.
+  const cleaned = stripNumericSeparators(source);
+  return stripImports(cleaned)
     .filter((line) => !/^\s*export\s+default\s/.test(line))  // drop default exports
     .filter((line) => !/^\s*export\s*\{/.test(line))         // drop export lists
     .map((line) => line.replace(/^(\s*)export\s+/, '$1'))
