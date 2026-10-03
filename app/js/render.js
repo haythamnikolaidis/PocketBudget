@@ -116,7 +116,8 @@ export function pocketCardHtml(p) {
 
 /**
  * One activity feed row: user tag, amount, note, pocket name and relative day,
- * plus a delete affordance keyed by data-txn-id for app.js to delegate from.
+ * plus a delete button for app.js to delegate from. The id lives on the BUTTON only:
+ * a row-level id made every tap on a row a delete.
  *
  * `pocketNameById` maps pocketId -> pocket name; an unknown or missing pocket
  * falls back to the raw id rather than rendering a blank pocket label.
@@ -143,7 +144,7 @@ export function activityRowHtml(t, pocketNameById, now = new Date()) {
     : '';
 
   return (
-    `<li class="pb-row flex items-start gap-3 py-3" data-txn-id="${esc(txn.id)}">` +
+    `<li class="pb-row flex items-start gap-3 py-3">` +
     `<span class="pb-row__user shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold` +
     ` text-slate-700">${esc(txn.user)}</span>` +
     `<div class="min-w-0 flex-1">${noteLine}${metaLine}</div>` +

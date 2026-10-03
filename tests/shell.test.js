@@ -16,7 +16,7 @@ const css = readFileSync(new URL('../app/styles.css', import.meta.url), 'utf8');
 const REQUIRED_IDS = [
   'toast', 'version-banner', 'stale-banner',
   'view-setup', 'setup-form', 'setup-endpoint', 'setup-token',
-  'setup-save', 'setup-test', 'setup-status',
+  'setup-save', 'setup-test', 'setup-status', 'setup-cancel', 'change-connection',
   'view-home', 'home-summary', 'pockets', 'activity',
   'view-add', 'add-form', 'add-amount', 'add-pocket', 'add-note',
   'add-user', 'add-submit', 'add-reason',
