@@ -4,28 +4,38 @@
 // Invariants enforced here:
 //   1. Auth is checked before any data is read or written.
 //   2. A balance can never go negative.
-//   3. The script lock is always released, even on the rejection paths.
+//   3. The script lock is always released, even on the rejection paths, and only
+//      after the writes made under it have been flushed to the sheet.
 //   4. No handler throws to the client; failures come back as { ok:false, error }.
 
-import { ACTIONS, USERS, SHEETS } from './00_Config.gs.js';
+import { ACTIONS, USERS, SHEETS, LOCK_TIMEOUT_MS } from './00_Config.gs.js';
 import {
-  toDollars, parseAmountInput, isValidUser, money, ok, fail,
+  toDollars, parseAmountInput, isValidUser, isValidRequestId, money, ok, fail,
 } from './01_Utils.gs.js';
 import { verifyToken } from './02_Auth.gs.js';
 import {
   readPockets, readTransactions, findPocketRow, writeBalance,
   appendTransaction, appendPocket, updatePocketRow, archivePocketRow,
-  deleteTransactionRow,
+  deleteTransactionRow, getTransactionRecord, findTransactionByRequestId, flushWrites,
 } from './03_Sheets.gs.js';
 import { monthKey } from './04_Rollover.gs.js';
-
-/** Milliseconds to wait for the script lock before giving up. */
-const LOCK_TIMEOUT_MS = 20000;
 
 /* --------------------------------------------------------------- helpers -- */
 
 /** Round dollars to 2dp. Every value crossing the API boundary goes through this. */
 const r2 = (n) => Math.round(Number(n) * 100) / 100;
+
+/**
+ * Release the script lock, flushing buffered writes first. Without the flush,
+ * the next request can take the lock and still read the pre-write balance.
+ */
+function unlock(lock) {
+  try {
+    flushWrites();
+  } finally {
+    lock.releaseLock();
+  }
+}
 
 /** Shape a stored pocket row into the API's pocket object. */
 function presentPocket(p, spentByPocket = {}) {
@@ -107,7 +117,7 @@ export function createPocket(params) {
     const pocket = appendPocket({ name, account: String(params.account ?? '').trim(), limit: toDollars(limitCents) });
     return ok({ pocket: presentPocket(pocket) });
   } finally {
-    lock.releaseLock();
+    unlock(lock);
   }
 }
 
@@ -142,15 +152,27 @@ export function updatePocket(params) {
     if (!pocket) return fail('POCKET_NOT_FOUND', 'Pocket not found: ' + pocketId);
     return ok({ pocket: presentPocket(pocket) });
   } finally {
-    lock.releaseLock();
+    unlock(lock);
   }
 }
 
 /**
- * The hot path. Order matters: auth -> validate -> lock -> re-read -> check -> deduct -> append.
+ * The hot path. Order matters:
+ *   auth -> validate -> lock -> (repeat?) -> re-read -> check -> record -> deduct.
  *
- * The balance is re-read INSIDE the lock, never from the caller's payload, so a stale
- * client cannot cause an incorrect deduction.
+ * The balance is re-read INSIDE the lock, never from the caller's payload, so a
+ * stale client cannot cause an incorrect deduction.
+ *
+ * IDEMPOTENCY: the client sends a `requestId` and reuses it when a request may
+ * or may not have landed (timeout, dropped connection). If a transaction with
+ * that id is already recorded, the original result is returned and NOTHING is
+ * deducted again. Without this, a lost response made the user retry and spend
+ * the same money twice.
+ *
+ * ATOMICITY: the transaction row is appended BEFORE the balance is written. If
+ * the append fails nothing has changed; if the balance write fails the row is
+ * removed again. The old order (balance, then row) could deduct money and leave
+ * no record of why.
  */
 export function createTransaction(params) {
   if (!verifyToken(params.token)) return fail('UNAUTHORIZED', 'Invalid or missing token.');
@@ -160,6 +182,11 @@ export function createTransaction(params) {
 
   const pocketId = String(params.pocketId ?? '');
   const note = String(params.note ?? '').trim().slice(0, 120);
+
+  const requestId = params.requestId == null ? '' : String(params.requestId);
+  if (requestId && !isValidRequestId(requestId)) {
+    return fail('INVALID_REQUEST', 'requestId must be 8-64 letters, digits or hyphens.');
+  }
 
   let amountCents;
   try {
@@ -175,6 +202,20 @@ export function createTransaction(params) {
   }
 
   try {
+    // A retry of something already recorded: answer with the original, change nothing.
+    const prior = findTransactionByRequestId(requestId);
+    if (prior) {
+      if (prior.pocketId !== pocketId || Math.round(prior.amount * 100) !== amountCents) {
+        return fail('INVALID_REQUEST', 'requestId was already used for a different expense.');
+      }
+      const current = readPockets({ includeArchived: true }).find((p) => p.id === pocketId);
+      return ok({
+        pocket: current ? presentPocket(current) : null,
+        transaction: prior,
+        duplicate: true,
+      });
+    }
+
     const row = findPocketRow(pocketId);
     if (!row) return fail('POCKET_NOT_FOUND', 'Pocket not found: ' + pocketId);
 
@@ -196,25 +237,36 @@ export function createTransaction(params) {
       );
     }
 
+    // The server stamps the time. A client-supplied timestamp could backdate an
+    // expense out of the current month, or be malformed after money had moved.
+    const now = new Date();
     const newBalance = toDollars(remainingCents);
-    writeBalance(pocketId, newBalance);
     const txnId = appendTransaction({
-      user, pocketId, amount: toDollars(amountCents), note,
-      timestamp: params.timestamp ? new Date(params.timestamp) : new Date(),
+      user, pocketId, amount: toDollars(amountCents), note, timestamp: now, requestId,
     });
+    try {
+      writeBalance(pocketId, newBalance);
+    } catch (err) {
+      try {
+        deleteTransactionRow(txnId);
+      } catch (undoErr) {
+        throw new Error(err.message + ' (and ' + txnId + ' could not be removed — check the Transactions sheet)');
+      }
+      throw err;
+    }
 
     return ok({
       pocket: presentPocket({ ...pocket, balance: newBalance }),
       transaction: {
         id: txnId,
-        timestamp: new Date().toISOString(),
+        timestamp: now.toISOString(),
         user, pocketId,
         amount: toDollars(amountCents),
         note,
       },
     });
   } finally {
-    lock.releaseLock();   // released on every path, success and rejection alike
+    unlock(lock);   // flushed, then released: on every path, success and rejection alike
   }
 }
 
@@ -231,7 +283,9 @@ export function deleteTransaction(params) {
   }
 
   try {
-    const record = deleteTransactionRow(txnId);
+    // Look first, change second. Deleting the row before the refund could lose the
+    // transaction and then fail to give the money back.
+    const record = getTransactionRecord(txnId);
     if (!record) return fail('TRANSACTION_NOT_FOUND', 'Transaction not found: ' + txnId);
 
     const pocket = readPockets({ includeArchived: true }).find((p) => p.id === record.pocketId);
@@ -241,6 +295,18 @@ export function deleteTransaction(params) {
     if (pocket) {
       refunded = r2(Math.min(pocket.limit, pocket.balance + record.amount));
       writeBalance(record.pocketId, refunded);
+      try {
+        deleteTransactionRow(txnId);
+      } catch (err) {
+        try {
+          writeBalance(record.pocketId, pocket.balance);   // undo the refund
+        } catch (undoErr) {
+          throw new Error(err.message + ' (and the refund to ' + record.pocketId + ' could not be undone)');
+        }
+        throw err;
+      }
+    } else {
+      deleteTransactionRow(txnId);
     }
 
     return ok({
@@ -248,7 +314,7 @@ export function deleteTransaction(params) {
       pocket: pocket ? presentPocket({ ...pocket, balance: refunded }) : null,
     });
   } finally {
-    lock.releaseLock();
+    unlock(lock);
   }
 }
 

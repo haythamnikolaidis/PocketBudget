@@ -60,6 +60,14 @@ export function isValidTransactionId(id) {
   return typeof id === 'string' && /^T\d{4,}$/.test(id);
 }
 
+/**
+ * A client-generated idempotency key: 8-64 chars of letters, digits and hyphens
+ * (a UUID fits). Kept strict because it is written to a sheet cell.
+ */
+export function isValidRequestId(id) {
+  return typeof id === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(id);
+}
+
 /* -------------------------------------------------------------------- ids -- */
 
 /** Next free pocket ID given the existing IDs, e.g. ['P01','P09'] -> 'P10'. */

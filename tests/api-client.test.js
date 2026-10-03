@@ -10,7 +10,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeApi, ApiError } from '../app/js/api.js';
+import { makeApi, ApiError, REQUEST_TIMEOUT_MS } from '../app/js/api.js';
 import { makeConfig } from '../app/js/config.js';
 
 /** A config already populated, as if the user had completed setup. */
@@ -199,4 +199,37 @@ test('ApiError carries its code and context', () => {
   assert.equal(e.code, 'BUSY');
   assert.equal(e.context.retry, true);
   assert.ok(e instanceof Error);
+});
+/* --------------------------------------------------------------- timeout -- */
+
+test('every request carries an abort signal, so one that hangs can be abandoned', async () => {
+  const seen = [];
+  const api = apiWith(async (url, opts) => { seen.push(opts); return okJson({ ok: true }); });
+  await api.getState();
+  await api.createTransaction({ amount: 1 });
+  assert.equal(seen.length, 2);
+  for (const opts of seen) assert.ok(opts.signal && typeof opts.signal.aborted === 'boolean');
+});
+
+test('an aborted request becomes a TIMEOUT ApiError, not a bare AbortError', async () => {
+  const api = apiWith(async () => { throw Object.assign(new Error('aborted'), { name: 'AbortError' }); });
+  await assert.rejects(() => api.createTransaction({ amount: 1 }), (err) => {
+    assert.ok(err instanceof ApiError);
+    assert.equal(err.code, 'TIMEOUT');
+    return true;
+  });
+});
+
+test('the timeout really aborts a request that never answers', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let signal;
+  const api = apiWith((url, opts) => new Promise((_, reject) => {
+    signal = opts.signal;
+    opts.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+  }));
+  const pending = api.getState();
+  const outcome = assert.rejects(pending, (err) => err.code === 'TIMEOUT');
+  t.mock.timers.tick(REQUEST_TIMEOUT_MS);
+  await outcome;
+  assert.equal(signal.aborted, true);
 });

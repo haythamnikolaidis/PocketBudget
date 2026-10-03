@@ -1,7 +1,7 @@
 // backend/03_Sheets.gs.js
 // CANONICAL SOURCE. The ONLY module that touches SpreadsheetApp.
 
-import { SHEETS } from './00_Config.gs.js';
+import { SHEETS, REQUEST_ID_LOOKBACK_ROWS } from './00_Config.gs.js';
 import { nextPocketId, nextTransactionId, isValidPocketId } from './01_Utils.gs.js';
 
 /* --------------------------------------------------------------- plumbing -- */
@@ -106,6 +106,52 @@ function findTransactionRow(txnId) {
   return 0;
 }
 
+/**
+ * Look for an already-recorded transaction carrying this `requestId`, among the
+ * newest rows only. Used to make a retried expense idempotent: when the first
+ * attempt committed but its response was lost, the retry finds it here instead
+ * of spending the money a second time.
+ */
+export function findTransactionByRequestId(requestId, lookback = REQUEST_ID_LOOKBACK_ROWS) {
+  if (!requestId) return null;
+  const sheet = getTransactionSheet();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2 || sheet.getLastColumn() < 7) return null;
+  const first = Math.max(2, lastRow - lookback + 1);
+  const rows = sheet.getRange(first, 1, lastRow - first + 1, 7).getValues();
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const r = rows[i];
+    if (String(r[6]) !== requestId) continue;
+    return {
+      id: String(r[0]),
+      timestamp: isoDate(r[1]),
+      user: String(r[2]),
+      pocketId: String(r[3]),
+      amount: num(r[4]),
+      note: String(r[5] || ''),
+    };
+  }
+  return null;
+}
+
+/** A transaction's `{ id, pocketId, amount }` WITHOUT removing it, or null if absent. */
+export function getTransactionRecord(txnId) {
+  const row = findTransactionRow(txnId);
+  if (!row) return null;
+  const vals = getTransactionSheet().getRange(row, 1, 1, 6).getValues()[0];
+  return { id: String(vals[0]), pocketId: String(vals[3]), amount: num(vals[4]) };
+}
+
+/**
+ * Push every pending write to the spreadsheet. Apps Script may buffer writes,
+ * and a lock released before they land lets the next request read the old
+ * balance — which is exactly the lost update the lock exists to prevent. Call
+ * this before releasing the script lock.
+ */
+export function flushWrites() {
+  SpreadsheetApp.flush();
+}
+
 /* ----------------------------------------------------------------- writes -- */
 
 /** Set a pocket's Current Balance (column E). */
@@ -144,10 +190,15 @@ export function archivePocketRow(pocketId) {
 }
 
 /** Append a transaction. Returns the new transaction ID. */
-export function appendTransaction({ user, pocketId, amount, note, timestamp }) {
+export function appendTransaction({ user, pocketId, amount, note, timestamp, requestId }) {
   const sheet = getTransactionSheet();
   const id = nextTransactionIdFromSheet();
-  sheet.appendRow([id, timestamp || new Date(), user, pocketId, amount, note || '']);
+  sheet.appendRow([id, timestamp || new Date(), user, pocketId, amount, note || '', requestId || '']);
+  if (requestId) {
+    // Sheets created before idempotency existed have no 7th header.
+    const header = sheet.getRange(1, 7);
+    if (header.getValues()[0][0] === '') header.setValue('Request ID');
+  }
   return id;
 }
 
@@ -186,7 +237,7 @@ export function ensureSheets() {
   const created = [];
   const wanted = {
     [SHEETS.POCKETS]: ['Pocket ID', 'Pocket Name', 'Bank Account', 'Monthly Limit', 'Current Balance', 'Status'],
-    [SHEETS.TRANSACTIONS]: ['Transaction ID', 'Timestamp', 'User / Spouse', 'Pocket ID', 'Amount', 'Merchant / Note'],
+    [SHEETS.TRANSACTIONS]: ['Transaction ID', 'Timestamp', 'User / Spouse', 'Pocket ID', 'Amount', 'Merchant / Note', 'Request ID'],
     [SHEETS.REPORT]: [],
   };
   for (const [name, headers] of Object.entries(wanted)) {

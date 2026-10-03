@@ -9,12 +9,12 @@
 import { handleRequest } from './05_Api.gs.js';
 import { verifyToken, getApiToken, setApiToken } from './02_Auth.gs.js';
 import {
-  readPockets, readTransactions, getReportSheet, ensureSheets,
+  readPockets, readTransactions, getReportSheet, ensureSheets, flushWrites,
 } from './03_Sheets.gs.js';
 import { applyRollover, shouldRollover, monthKey } from './04_Rollover.gs.js';
 import { renderReport } from './06_Report.gs.js';
 import { writeBalance } from './03_Sheets.gs.js';
-import { USERS, SHEETS } from './00_Config.gs.js';
+import { USERS, SHEETS, LOCK_TIMEOUT_MS } from './00_Config.gs.js';
 
 /** Serialize a response as ContentService JSON. */
 function json(res) {
@@ -81,19 +81,40 @@ function doPost(e) {
  * Daily trigger. Idempotent: does nothing if the month has not changed, so a
  * missed run on the 1st self-heals on the 2nd rather than skipping a reset.
  */
-function dailyRollover() {
+export function dailyRollover() {
   const props = PropertiesService.getScriptProperties();
   const lastKey = props.getProperty('LAST_ROLLOVER_KEY');
   const now = new Date();
 
   if (shouldRollover(lastKey, now)) {
-    const pockets = readPockets({ includeArchived: true });
-    const { pockets: reset, resetCount } = applyRollover(pockets);
-    for (const p of reset) {
-      if (p.status === 'Active' && p.balance !== p.limit) writeBalance(p.id, p.limit);
+    // Same lock as every expense: a rollover racing a submission could overwrite
+    // the balance that submission had just deducted from. Throwing (rather than
+    // skipping) leaves LAST_ROLLOVER_KEY unset, so the next run tries again.
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(LOCK_TIMEOUT_MS)) {
+      throw new Error('Rollover postponed: could not get the script lock.');
     }
-    props.setProperty('LAST_ROLLOVER_KEY', monthKey(now));
-    Logger.log('PocketBudget rollover: reset ' + resetCount + ' pockets for ' + monthKey(now));
+    try {
+      const pockets = readPockets({ includeArchived: true });
+      const { pockets: reset, resetCount } = applyRollover(pockets);
+      // Compare against the balance as it WAS. `reset` already holds balance ===
+      // limit for every active pocket, so testing `p.balance !== p.limit` on it
+      // was always false and the rollover wrote nothing to the sheet.
+      pockets.forEach((before, i) => {
+        const after = reset[i];
+        if (after.status === 'Active' && before.balance !== after.balance) {
+          writeBalance(after.id, after.balance);
+        }
+      });
+      props.setProperty('LAST_ROLLOVER_KEY', monthKey(now));
+      Logger.log('PocketBudget rollover: reset ' + resetCount + ' pockets for ' + monthKey(now));
+    } finally {
+      try {
+        flushWrites();
+      } finally {
+        lock.releaseLock();
+      }
+    }
   }
 
   renderReport(getReportSheet(), {

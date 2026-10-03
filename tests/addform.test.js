@@ -546,3 +546,76 @@ test('a second submit after a success works, so two expenses can be logged in a 
   assert.equal(m.calls.length, 2);
   assert.equal(m.added.length, 2);
 });
+/* ----------------------------------------------------- retry idempotency -- */
+
+/** Fill the form and press Save. */
+async function save(m, amount = '12.50', pocket = 'P01') {
+  m.view.amount.value = amount;
+  m.view.pocket.value = pocket;
+  await m.view.submit.dispatch('click');
+}
+
+test('every submission carries a requestId', async () => {
+  const m = mount();
+  await save(m);
+  assert.match(m.calls[0].requestId, /^[A-Za-z0-9-]{8,64}$/);
+});
+
+test('retrying the SAME expense after a lost response reuses the requestId', async () => {
+  const m = mount();
+  m.api.createTransaction = (t) => { m.calls.push(t); return Promise.reject(new ApiError('NETWORK', 'Could not reach the server.')); };
+  await save(m, '7.25');
+  await m.view.submit.dispatch('click');
+  assert.equal(m.calls.length, 2);
+  assert.equal(m.calls[1].requestId, m.calls[0].requestId,
+    'same id, so the server can recognise it as the same expense');
+});
+
+test('a TIMEOUT also keeps the requestId, and tells the user a retry is safe', async () => {
+  const m = mount();
+  m.api.createTransaction = (t) => { m.calls.push(t); return Promise.reject(new ApiError('TIMEOUT', 'The server took too long to respond.')); };
+  await save(m);
+  await m.view.submit.dispatch('click');
+  assert.equal(m.calls[1].requestId, m.calls[0].requestId);
+  const last = m.toasts[m.toasts.length - 1];
+  assert.match(last.msg, /will not be recorded twice/i);
+  assert.equal(last.kind, 'error');
+});
+
+test('changing the amount between attempts is a different expense and gets a new requestId', async () => {
+  const m = mount();
+  m.api.createTransaction = (t) => { m.calls.push(t); return Promise.reject(new ApiError('NETWORK', 'x')); };
+  await save(m, '10');
+  m.view.amount.value = '11';
+  await m.view.submit.dispatch('click');
+  assert.notEqual(m.calls[1].requestId, m.calls[0].requestId);
+});
+
+test('after a success the next expense gets a fresh requestId', async () => {
+  const m = mount();
+  await save(m, '5');
+  await save(m, '5');   // identical fields, but the first one is done
+  assert.equal(m.calls.length, 2);
+  assert.notEqual(m.calls[1].requestId, m.calls[0].requestId);
+});
+
+test('after the server REJECTS an expense the next attempt is a new one', async () => {
+  const m = mount();
+  let reject = true;
+  m.api.createTransaction = (t) => {
+    m.calls.push(t);
+    return reject ? Promise.reject(new ApiError('INSUFFICIENT_FUNDS', 'Insufficient funds in Groceries. Remaining: $1.00')) : Promise.resolve({ ok: true });
+  };
+  await save(m, '10');
+  reject = false;
+  await m.view.submit.dispatch('click');
+  assert.notEqual(m.calls[1].requestId, m.calls[0].requestId, 'a refusal proves nothing was recorded');
+});
+
+test('a server rejection keeps its own wording rather than the "not confirmed" message', async () => {
+  const m = mount();
+  m.api.createTransaction = () => Promise.reject(new ApiError('INVALID_AMOUNT', 'Amount must be greater than zero.'));
+  await save(m, '5');
+  const last = m.toasts[m.toasts.length - 1];
+  assert.equal(last.msg, 'Amount must be greater than zero.');
+});
