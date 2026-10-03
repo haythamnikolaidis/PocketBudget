@@ -628,3 +628,46 @@ test('a decimal comma is sent as a decimal: "12,50" is R12.50, not R1,250', asyn
   await m.view.submit.dispatch('click');
   assert.equal(m.calls[1].amount, 7.5);
 });
+
+/* ----------------------------------------------- remembering "Who" (15) -- */
+
+function memStore(seed = {}) {
+  const m = new Map(Object.entries(seed));
+  return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), _m: m };
+}
+
+test('choosing who you are is remembered, and a fresh launch starts on that name', () => {
+  const store = memStore();
+  const first = mount({ opts: { userStore: store } });
+  assert.notEqual(first.view.user.value, 'Sam', 'nothing saved yet');
+  first.view.user.value = 'Sam';
+  first.view.user.dispatch('change');
+  assert.equal(store._m.get('pb.user'), 'Sam');
+  first.teardown();
+
+  const second = mount({ opts: { userStore: store } });   // next launch, same phone
+  assert.equal(second.view.user.value, 'Sam');
+});
+
+test('the remembered name survives a refresh of the form state', () => {
+  const store = memStore({ 'pb.user': 'Sam' });
+  const m = mount({ opts: { userStore: store } });
+  assert.equal(m.view.user.value, 'Sam');
+  updateAddFormState(m.teardown, { ...state });
+  assert.equal(m.view.user.value, 'Sam');
+});
+
+test('a remembered name that is no longer a household member is ignored', () => {
+  const m = mount({ opts: { userStore: memStore({ 'pb.user': 'Mallory' }) } });
+  assert.notEqual(m.view.user.value, 'Mallory');
+});
+
+test('storage that throws (a private window) never breaks the form', async () => {
+  const angry = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); } };
+  const m = mount({ opts: { userStore: angry } });
+  m.view.user.value = 'Sam';
+  assert.doesNotThrow(() => m.view.user.dispatch('change'));
+  m.view.amount.value = '5';
+  await m.view.submit.dispatch('click');
+  assert.equal(m.calls[0].user, 'Sam');
+});
