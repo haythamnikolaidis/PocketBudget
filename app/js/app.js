@@ -25,6 +25,7 @@
 
 import { config as defaultConfig, makeConfig } from './config.js';
 import { makeApi } from './api.js';
+import { formatMoney } from './format.js';
 import { renderPockets, renderActivity } from './render.js';
 import { mountAddForm, updateAddFormState } from './addform.js';
 import { mountManage } from './manage.js';
@@ -376,6 +377,8 @@ export function boot(deps = {}) {
     setupSave: byId('setup-save'),
     setupTest: byId('setup-test'),
     setupStatus: byId('setup-status'),
+    setupCancel: byId('setup-cancel'),
+    changeConnection: byId('change-connection'),
     viewSetup: byId('view-setup'),
     viewHome: byId('view-home'),
     viewAdd: byId('view-add'),
@@ -422,6 +425,7 @@ export function boot(deps = {}) {
   // ---- state -------------------------------------------------------------
   let lastState = null;
   let lastUpdatedAt = null;
+  let lastRefreshError = null;
   let refreshPromise = null;
   let teardownAddForm = null;
   let teardownManage = null;
@@ -619,6 +623,7 @@ export function boot(deps = {}) {
       .then((state) => {
         if (torn) return lastState;
         lastState = state || {};
+        lastRefreshError = null;
         lastUpdatedAt = now();
         renderState(lastState);
         mountChildScreens(lastState);
@@ -627,10 +632,18 @@ export function boot(deps = {}) {
         return lastState;
       }, (err) => {
         if (torn) return lastState;
+        lastRefreshError = err;
         // Keep the last known balances on screen, LABELLED with when they were
         // fetched. NEVER present them as current — see rule 2 in the header.
         if (lastState) renderState(lastState);
         showStaleBanner(staleMessage(err));
+        // A rejected token cannot be fixed by retrying: the stale banner would
+        // say "Tap to retry" forever. Take the user to the one screen that can
+        // fix it. (Skipped while setup is already showing — saveSetup reports
+        // the failure there itself.)
+        if (err && err.code === 'UNAUTHORIZED' && !isSetupVisible()) {
+          showSetup('The household token was rejected. Enter the current token to reconnect.');
+        }
         return lastState;
       });
 
@@ -699,9 +712,27 @@ export function boot(deps = {}) {
     }
   }
 
-  /** Save the setup fields and, if they work, go straight to the home feed. */
+  /** Put back the connection that was saved before an attempt to replace it. */
+  function restoreConfig(prev) {
+    try {
+      if (prev.endpoint && prev.token) config.configure(prev.endpoint, prev.token);
+      else config.clear();
+    } catch (_) {
+      config.clear();
+    }
+  }
+
+  /**
+   * Save the setup fields and, if they work, go straight to the home feed.
+   *
+   * The new values are only KEPT once the server accepts them. They have to be
+   * stored first (the api client reads the config), so a failed attempt puts
+   * the previous connection back. Without that, one mistyped token was saved,
+   * the next launch skipped this screen, and there was no way back to it.
+   */
   async function saveSetup() {
     const { endpoint, token } = readSetupFields();
+    const prev = { endpoint: config.getEndpoint(), token: config.getToken() };
     if (els.setupSave) els.setupSave.disabled = true;
     try {
       config.configure(endpoint, token);
@@ -715,11 +746,14 @@ export function boot(deps = {}) {
       await refresh();
       const failed = els.staleBanner && els.staleBanner.hidden === false;
       if (failed) {
-        // Surface the PRECISE reason, not a generic apology: the whole point of
-        // this screen is that a wrong token reads as "Invalid or missing token"
-        // here rather than as a mystery three screens later.
-        setSetupStatus(String(els.staleBanner.textContent || '').trim()
-          || 'Saved, but the server could not be reached. Check the values.', 'error');
+        // Surface the PRECISE reason, not the home screen's "cached data" banner:
+        // a wrong token reads as "Invalid or missing token" here rather than as a
+        // mystery three screens later.
+        setSetupStatus(lastRefreshError
+          ? describeError(lastRefreshError)
+          : 'The server could not be reached. Check the values.', 'error');
+        restoreConfig(prev);
+        syncSetupCancel();
         return false;
       }
       setSetupStatus('Saved.', 'success');
@@ -730,10 +764,47 @@ export function boot(deps = {}) {
     }
   }
 
+  function isSetupVisible() {
+    return Boolean(els.viewSetup) && els.viewSetup.hidden === false;
+  }
+
+  /** "Cancel" only makes sense when there is a working connection to go back to. */
+  function syncSetupCancel() {
+    setHidden(els.setupCancel, !config.isConfigured());
+  }
+
+  /**
+   * Open the setup screen on demand: from the Manage tab's "Change connection",
+   * or automatically when the server rejects the token. The endpoint is
+   * prefilled; the token is NOT, so it has to be typed again.
+   */
+  function showSetup(message) {
+    if (els.setupEndpoint) els.setupEndpoint.value = config.getEndpoint();
+    if (els.setupToken) els.setupToken.value = '';
+    setSetupStatus(message || '', message ? 'error' : 'info');
+    syncSetupCancel();
+    setHidden(tabBar, true);
+    switchView(views, tabs, 'setup');
+  }
+
   /** Leave the setup screen: tab bar on, home feed visible. */
   function enterApp() {
     setHidden(tabBar, false);
     switchView(views, tabs, 'home');
+  }
+
+  /**
+   * Ask before deleting, naming the expense so the right one is being removed.
+   * A host with no confirm() (a headless test) proceeds, as manage.js does.
+   */
+  function confirmDelete(txnId) {
+    if (!win || typeof win.confirm !== 'function') return true;
+    const txns = lastState && Array.isArray(lastState.transactions) ? lastState.transactions : [];
+    const t = txns.find((x) => x && String(x.id) === txnId);
+    const what = t
+      ? `${formatMoney(t.amount)}${t.note ? ' (' + t.note + ')' : ''}`
+      : 'this expense';
+    return win.confirm(`Delete ${what}? The amount goes back into its pocket.`) === true;
   }
 
   /* ------------------------------------------------------- install UI -- */
@@ -815,6 +886,13 @@ export function boot(deps = {}) {
   // Binding both would save twice and spend two Apps Script cold starts on one
   // deliberate action.
   on(els.setupTest, 'click', () => { track(testConnection()); });
+on(els.changeConnection, 'click', () => { showSetup(''); });
+on(els.setupCancel, 'click', () => {
+  if (!config.isConfigured()) return;
+  setSetupStatus('', 'info');
+  enterApp();
+  track(refresh());   // the failed attempt may have left its error banner up
+});
   on(els.setupForm, 'submit', (ev) => {
     if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
     track(saveSetup());
@@ -822,14 +900,20 @@ export function boot(deps = {}) {
 
   // Delete affordance: the feed re-renders on every state change, so this is
   // delegated from the container rather than bound per row.
+  //
+  // It keys on the DELETE BUTTON (data-action="delete-txn"), never on the row:
+  // the row also carried the transaction id, and matching on that made a tap
+  // anywhere on a row — to read it, or while scrolling — delete the expense and
+  // refund the pocket. Deleting also asks first: it is not undoable.
   on(els.activity, 'click', (ev) => {
     const target = ev && ev.target && typeof ev.target.closest === 'function'
-      ? ev.target.closest('[data-txn-id]')
+      ? ev.target.closest('[data-action="delete-txn"]')
       : null;
     if (!target) return;
     const dataset = target.dataset || {};
-    const txnId = dataset.txnId || target.getAttribute && target.getAttribute('data-txn-id');
+    const txnId = dataset.txnId || (target.getAttribute && target.getAttribute('data-txn-id'));
     if (!txnId) return;
+    if (!confirmDelete(String(txnId))) return;
     track(Promise.resolve()
       .then(() => api.deleteTransaction(String(txnId)))
       .then(() => { toast('Deleted.', 'success'); return refresh(); })

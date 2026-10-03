@@ -187,7 +187,7 @@ function makeEl(id = '', tag = 'div') {
 const SHELL_IDS = [
   'toast', 'version-banner', 'stale-banner',
   'view-setup', 'setup-form', 'setup-endpoint', 'setup-token',
-  'setup-save', 'setup-test', 'setup-status',
+  'setup-save', 'setup-test', 'setup-status', 'setup-cancel', 'change-connection',
   'view-home', 'home-summary', 'pockets', 'activity',
   'view-add', 'add-form', 'add-amount', 'add-pocket', 'add-note',
   'add-user', 'add-submit', 'add-reason',
@@ -973,6 +973,58 @@ test('clicking a data-txn-id element deletes the transaction then refreshes', as
   handle.teardown();
 });
 
+test('tapping the body of a feed row does NOT delete it', async () => {
+  const h = makeHarness();
+  const api = fakeApi();
+  const handle = await bootIn(h, { config: configuredConfig(), api });
+  await handle.ready;
+
+  // What a row looks like now: an <li> and some text, no delete action.
+  const row = makeEl('', 'li');
+  const text = makeEl('', 'p');
+  row.appendChild(text);
+  text.parentNode = row;
+  h.byId.get('activity').appendChild(row);
+  row.parentNode = h.byId.get('activity');
+
+  h.byId.get('activity').dispatch('click', { target: text });
+  await handle.pending();
+
+  assert.deepEqual(api.calls.deleteTransaction, []);
+  assert.equal(api.calls.getState, 1);
+
+  handle.teardown();
+});
+
+test('delete asks first, names the expense, and does nothing if declined', async () => {
+  const h = makeHarness();
+  const api = fakeApi();
+  const asked = [];
+  let answer = false;
+  h.win.confirm = (msg) => { asked.push(msg); return answer; };
+  const handle = await bootIn(h, { config: configuredConfig(), api });
+  await handle.ready;
+
+  const del = makeEl('', 'button');
+  del.setAttribute('data-action', 'delete-txn');
+  del.setAttribute('data-txn-id', 'T1001');
+  h.byId.get('activity').appendChild(del);
+
+  h.byId.get('activity').dispatch('click', { target: del });
+  await handle.pending();
+  assert.equal(asked.length, 1);
+  assert.match(asked[0], /\$65\.20/);
+  assert.match(asked[0], /Whole Foods/);
+  assert.deepEqual(api.calls.deleteTransaction, [], 'declined: nothing is deleted');
+
+  answer = true;
+  h.byId.get('activity').dispatch('click', { target: del });
+  await handle.pending();
+  assert.deepEqual(api.calls.deleteTransaction, ['T1001']);
+
+  handle.teardown();
+});
+
 test('a failed delete surfaces the error and does not fake a refresh', async () => {
   const h = makeHarness();
   const api = fakeApi();
@@ -1206,6 +1258,104 @@ test('a poisoned fetch leaves the stale banner up and never claims fresh data', 
   assert.match(banner.textContent, /Could not reach the server/i);
   assert.equal(h.byId.get('pockets').innerHTML.includes('Groceries'), true,
     'last known balances stay on screen, labelled');
+
+  handle.teardown();
+});
+
+/* ------------------------------------------- recovering from a bad token -- */
+
+const unauthorized = () => Object.assign(new Error('Invalid or missing token.'), { name: 'ApiError', code: 'UNAUTHORIZED' });
+
+test('a rejected first save is NOT kept: the next launch still shows setup', async () => {
+  const h = makeHarness();
+  const config = emptyConfig();
+  h.byId.get('setup-endpoint').value = ENDPOINT;
+  h.byId.get('setup-token').value = 'wrong-token';
+
+  const handle = await bootIn(h, { config, api: fakeApi({ stateError: unauthorized() }) });
+  await handle.ready;
+  h.byId.get('setup-form').dispatch('submit');
+  await handle.pending();
+
+  assert.equal(config.isConfigured(), false, 'the bad token must not stay saved');
+  assert.equal(config.getToken(), '');
+  assert.equal(h.byId.get('view-setup').hidden, false);
+  assert.equal(h.byId.get('setup-cancel').hidden, true, 'nothing to cancel back to');
+
+  handle.teardown();
+});
+
+test('a rejected replacement keeps the previous working connection', async () => {
+  const h = makeHarness();
+  const config = configuredConfig();
+  let reject = false;
+  const api = fakeApi();
+  const good = api.getState;
+  api.getState = async () => { if (reject) throw unauthorized(); return good(); };
+
+  const handle = await bootIn(h, { config, api });
+  await handle.ready;
+  h.byId.get('change-connection').dispatch('click');
+  h.byId.get('setup-endpoint').value = ENDPOINT;
+  h.byId.get('setup-token').value = 'typo';
+  reject = true;
+  h.byId.get('setup-form').dispatch('submit');
+  await handle.pending();
+
+  assert.equal(config.getToken(), TOKEN, 'the old token is restored');
+  assert.equal(config.getEndpoint(), ENDPOINT);
+  assert.equal(h.byId.get('view-setup').hidden, false, 'the user stays on setup to try again');
+
+  handle.teardown();
+});
+
+test('an UNAUTHORIZED refresh sends the user to setup, endpoint prefilled, token blank', async () => {
+  const h = makeHarness();
+  const config = configuredConfig();
+  const handle = await bootIn(h, { config, api: fakeApi({ stateError: unauthorized() }) });
+  await handle.ready;
+
+  assert.equal(h.byId.get('view-setup').hidden, false);
+  assert.equal(h.byId.get('view-home').hidden, true);
+  assert.equal(h.nav.hidden, true);
+  assert.equal(h.byId.get('setup-endpoint').value, ENDPOINT);
+  assert.equal(h.byId.get('setup-token').value, '');
+  assert.match(h.byId.get('setup-status').textContent, /token was rejected/i);
+  assert.equal(h.byId.get('setup-cancel').hidden, false, 'a connection exists to go back to');
+
+  handle.teardown();
+});
+
+test('a network failure does NOT send the user to setup', async () => {
+  const h = makeHarness();
+  const err = Object.assign(new Error('Could not reach the server.'), { name: 'ApiError', code: 'NETWORK' });
+  const handle = await bootIn(h, { config: configuredConfig(), api: fakeApi({ stateError: err }) });
+  await handle.ready;
+
+  assert.equal(h.byId.get('view-setup').hidden, true);
+  assert.equal(h.byId.get('view-home').hidden, false);
+
+  handle.teardown();
+});
+
+test('Change connection opens setup; Cancel returns to the feed and refetches', async () => {
+  const h = makeHarness();
+  const api = fakeApi();
+  const handle = await bootIn(h, { config: configuredConfig(), api });
+  await handle.ready;
+  assert.equal(api.calls.getState, 1);
+
+  h.byId.get('change-connection').dispatch('click');
+  assert.equal(h.byId.get('view-setup').hidden, false);
+  assert.equal(h.nav.hidden, true);
+  assert.equal(h.byId.get('setup-endpoint').value, ENDPOINT);
+
+  h.byId.get('setup-cancel').dispatch('click');
+  await handle.pending();
+  assert.equal(h.byId.get('view-setup').hidden, true);
+  assert.equal(h.byId.get('view-home').hidden, false);
+  assert.equal(h.nav.hidden, false);
+  assert.equal(api.calls.getState, 2);
 
   handle.teardown();
 });

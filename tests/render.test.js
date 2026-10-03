@@ -271,8 +271,8 @@ test('activityRowHtml escapes the transaction id inside data-txn-id', () => {
   const html = activityRowHtml(txn({ id: 'T" onmouseover="alert(1)' }), {});
   assert.doesNotMatch(html, liveAttr('onmouseover'), 'id broke out into a live attribute');
   assert.ok(html.includes('data-txn-id="T&quot; onmouseover=&quot;alert(1)"'), html);
-  // The id is used twice (row + delete button) and never opens a new tag.
-  assert.equal((html.match(/data-txn-id=/g) || []).length, 2);
+  // The id lives on the delete button only, and never opens a new tag.
+  assert.equal((html.match(/data-txn-id=/g) || []).length, 1);
   assert.equal(buttonTags(html).length, 1);
 });
 
@@ -311,6 +311,13 @@ test('activityRowHtml carries a delete affordance keyed by data-txn-id', () => {
   assert.match(html, /data-action="delete-txn"/);
   assert.ok(html.includes('data-txn-id="T1001"'), html);
   assert.match(html, /<button[^>]*data-action="delete-txn"/);
+});
+
+test('activityRowHtml keeps the transaction id OFF the row, so tapping a row cannot delete it', () => {
+  const html = activityRowHtml(txn({ id: 'T1001' }), {});
+  const li = html.match(/<li[^>]*>/)[0];
+  assert.doesNotMatch(li, /data-txn-id/, li);
+  assert.doesNotMatch(li, /data-action/, li);
 });
 
 test('activityRowHtml omits the note line and any dangling separator when the note is empty', () => {

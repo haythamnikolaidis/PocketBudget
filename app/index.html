@@ -84,6 +84,10 @@
           <!-- Secondary button. It needs an explicit colour: inheriting the
                page's light text on a transparent background made it read as a
                disabled ghost control, which sent debugging down the wrong path. -->
+          <button type="button" id="setup-cancel" hidden
+                  class="hidden rounded-lg border border-slate-500 px-4 py-2.5 text-sm text-slate-300">
+            Cancel
+          </button>
           <button type="button" id="setup-test"
                   class="rounded-lg border border-slate-500 bg-slate-800 px-4 py-2.5 text-sm
                          font-medium text-slate-100 hover:bg-slate-700
@@ -187,6 +191,16 @@
           Create pocket
         </button>
       </form>
+
+      <h2 class="mt-8 text-sm font-semibold uppercase tracking-wide text-slate-400">Connection</h2>
+      <p class="mt-2 text-xs text-slate-500">
+        Use this after the household token is changed, or to point the app at a different Sheet.
+      </p>
+      <button type="button" id="change-connection"
+              class="mt-3 w-full rounded-lg border border-slate-500 bg-slate-800 px-4 py-2.5 text-sm
+                     font-medium text-slate-100 hover:bg-slate-700">
+        Change connection
+      </button>
 
       <p class="mt-8 text-xs text-slate-500">
         Archiving hides a pocket but keeps its transactions. Deleting is intentionally not offered.
