@@ -908,7 +908,14 @@ on(els.setupCancel, 'click', () => {
     if (!confirmDelete(String(txnId))) return;
     track(Promise.resolve()
       .then(() => api.deleteTransaction(String(txnId)))
-      .then(() => { toast('Deleted.', 'success'); return refresh(); })
+      .then((res) => {
+        // An expense from an earlier month is removed from the history, but its
+        // money is not given back to this month's balance.
+        toast(res && res.refunded === false
+          ? 'Deleted. It was from an earlier month, so the balance is unchanged.'
+          : 'Deleted.', 'success');
+        return refresh();
+      })
       .catch((err) => {
         // Nothing changed, so nothing is refetched: the feed still shows the
         // truth. Reporting the failure is the honest move.

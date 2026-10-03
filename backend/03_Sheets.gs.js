@@ -134,12 +134,12 @@ export function findTransactionByRequestId(requestId, lookback = REQUEST_ID_LOOK
   return null;
 }
 
-/** A transaction's `{ id, pocketId, amount }` WITHOUT removing it, or null if absent. */
+/** A transaction's `{ id, timestamp, pocketId, amount }` WITHOUT removing it, or null if absent. */
 export function getTransactionRecord(txnId) {
   const row = findTransactionRow(txnId);
   if (!row) return null;
   const vals = getTransactionSheet().getRange(row, 1, 1, 6).getValues()[0];
-  return { id: String(vals[0]), pocketId: String(vals[3]), amount: num(vals[4]) };
+  return { id: String(vals[0]), timestamp: isoDate(vals[1]), pocketId: String(vals[3]), amount: num(vals[4]) };
 }
 
 /**

@@ -292,7 +292,12 @@ export function deleteTransaction(params) {
     // Declared out here on purpose: the original plan scoped this `const` inside the
     // `if` block below and then read it after the block, which throws ReferenceError.
     let refunded = null;
-    if (pocket) {
+    // Only this month's spending is given back. This month's budget never paid for
+    // an earlier month's expense, so refunding it would hand out money the pocket
+    // does not owe (and the rollover has already reset last month's balance).
+    const inCurrentMonth = Boolean(record.timestamp)
+      && monthKey(new Date(record.timestamp)) === monthKey(new Date());
+    if (pocket && inCurrentMonth) {
       refunded = r2(Math.min(pocket.limit, pocket.balance + record.amount));
       writeBalance(record.pocketId, refunded);
       try {
@@ -311,7 +316,8 @@ export function deleteTransaction(params) {
 
     return ok({
       deleted: { id: record.id, pocketId: record.pocketId, amount: record.amount },
-      pocket: pocket ? presentPocket({ ...pocket, balance: refunded }) : null,
+      refunded: refunded !== null,
+      pocket: pocket ? presentPocket({ ...pocket, balance: refunded !== null ? refunded : pocket.balance }) : null,
     });
   } finally {
     unlock(lock);

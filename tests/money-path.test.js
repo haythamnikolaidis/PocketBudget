@@ -214,7 +214,7 @@ test('ATOMIC: the server stamps the time; a client timestamp is ignored (even a 
 
 test('ATOMIC delete: if the refund fails, the transaction is kept', () => {
   const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 90, 'Active']],
-    txns: [['T1001', new Date('2026-10-01T10:00:00Z'), 'Alex', 'P01', 10, '']] });
+    txns: [['T1001', new Date(), 'Alex', 'P01', 10, '']] });
   const realGetRange = s.wb.pockets.getRange.bind(s.wb.pockets);
   s.wb.pockets.getRange = (row, col, ...rest) => {
     const range = realGetRange(row, col, ...rest);
@@ -230,7 +230,7 @@ test('ATOMIC delete: if the refund fails, the transaction is kept', () => {
 
 test('ATOMIC delete: if removing the row fails, the refund is undone', () => {
   const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 90, 'Active']],
-    txns: [['T1001', new Date('2026-10-01T10:00:00Z'), 'Alex', 'P01', 10, '']] });
+    txns: [['T1001', new Date(), 'Alex', 'P01', 10, '']] });
   s.wb.txns.deleteRow = () => { throw new Error('delete failed'); };
   const r = viaDispatcher('deleteTransaction', { txnId: 'T1001' });
   assert.equal(r.ok, false);
@@ -241,7 +241,7 @@ test('ATOMIC delete: if removing the row fails, the refund is undone', () => {
 
 test('ATOMIC delete: the happy path still refunds and removes', () => {
   const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 90, 'Active']],
-    txns: [['T1001', new Date('2026-10-01T10:00:00Z'), 'Alex', 'P01', 10, '']] });
+    txns: [['T1001', new Date(), 'Alex', 'P01', 10, '']] });
   const r = deleteTransaction({ token: TOKEN, txnId: 'T1001' });
   assert.equal(r.ok, true);
   assert.equal(s.balance(), 100);
@@ -283,5 +283,37 @@ test('LIMITS: raising the limit of a depleted pocket gives it money, so it can b
   assert.equal(r.pocket.balance, 50);
   assert.equal(r.pocket.isLocked, false);
   assert.equal(spend({ amount: 5, requestId: 'req-0002-bbbb' }).ok, true);
+  s.restore();
+});
+
+/* ---------------------------------------- deleting old expenses (item 10) -- */
+
+test('DELETE: removing an expense from an EARLIER month does not refund this month', () => {
+  const s = setup({
+    pockets: [['P01', 'Groceries', 'Chase', 800, 800, 'Active']],
+    txns: [['T1001', new Date('2020-03-10T10:00:00Z'), 'Alex', 'P01', 500, 'old']],
+  });
+  const r = deleteTransaction({ token: TOKEN, txnId: 'T1001' });
+  assert.equal(r.ok, true);
+  assert.equal(r.refunded, false, 'the reply says no refund was made');
+  assert.equal(s.wb.txns._rows.length, 1, 'but the row is gone from the history');
+  s.restore();
+  const s2 = setup({
+    pockets: [['P01', 'Groceries', 'Chase', 800, 300, 'Active']],
+    txns: [['T1001', new Date('2020-03-10T10:00:00Z'), 'Alex', 'P01', 100, 'old']],
+  });
+  deleteTransaction({ token: TOKEN, txnId: 'T1001' });
+  assert.equal(s2.balance(), 300, 'this month\'s balance is untouched');
+  s2.restore();
+});
+
+test('DELETE: removing this month\'s expense still refunds it', () => {
+  const s = setup({
+    pockets: [['P01', 'Groceries', 'Chase', 800, 300, 'Active']],
+    txns: [['T1001', new Date(), 'Alex', 'P01', 100, 'new']],
+  });
+  const r = deleteTransaction({ token: TOKEN, txnId: 'T1001' });
+  assert.equal(r.refunded, true);
+  assert.equal(s.balance(), 400);
   s.restore();
 });

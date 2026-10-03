@@ -1367,3 +1367,21 @@ test('the home summary is written in rand', async () => {
   assert.match(h.byId.get('home-summary').textContent, /^37% of R920\.00 left$/);
   handle.teardown();
 });
+
+test('deleting an expense from an earlier month says the balance did not change', async () => {
+  const h = makeHarness();
+  const api = fakeApi();
+  api.deleteTransaction = async (id) => { api.calls.deleteTransaction.push(id); return { ok: true, refunded: false }; };
+  const handle = await bootIn(h, { config: configuredConfig(), api });
+  await handle.ready;
+
+  const del = makeEl('', 'button');
+  del.setAttribute('data-action', 'delete-txn');
+  del.setAttribute('data-txn-id', 'T1001');
+  h.byId.get('activity').appendChild(del);
+  h.byId.get('activity').dispatch('click', { target: del });
+  await handle.pending();
+
+  assert.match(h.byId.get('toast').textContent, /earlier month, so the balance is unchanged/);
+  handle.teardown();
+});
