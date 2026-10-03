@@ -82,7 +82,11 @@ export function getState(params) {
   if (!verifyToken(params.token)) return fail('UNAUTHORIZED', 'Invalid or missing token.');
 
   const month = params.month || monthKey(new Date());
-  const pockets = readPockets();
+  const everyPocket = readPockets({ includeArchived: true });
+  const pockets = everyPocket.filter((p) => p.status !== 'Archived');
+  const archivedPockets = everyPocket
+    .filter((p) => p.status === 'Archived')
+    .map((p) => ({ id: p.id, name: p.name, account: p.account, limit: r2(p.limit) }));
   const transactions = readTransactions({ limit: 10 });
 
   const spentByPocket = {};
@@ -98,6 +102,7 @@ export function getState(params) {
     serverTime: new Date().toISOString(),
     month,
     pockets: present,
+    archivedPockets,
     transactions,
     summary: {
       totalLimit: sum('limit'),
@@ -176,8 +181,24 @@ export function updatePocket(params) {
     return fail('BUSY', 'Another update is in progress. Please try again.');
   }
   try {
-    const pocket = updatePocketRow(pocketId, patch);
+    const before = readPockets({ includeArchived: true }).find((p) => p.id === pocketId);
+    const reopening = params.unarchive === true && Boolean(before) && before.status === 'Archived';
+
+    let pocket = updatePocketRow(pocketId, patch);
     if (!pocket) return fail('POCKET_NOT_FOUND', 'Pocket not found: ' + pocketId);
+
+    if (reopening) {
+      // An archived pocket is skipped by every rollover, so its stored balance is
+      // whatever it was on the day it was archived. Give it what this month's
+      // spending actually leaves.
+      const month = monthKey(new Date());
+      const spent = readTransactions()
+        .filter((t) => t.pocketId === pocketId && t.timestamp && monthKey(new Date(t.timestamp)) === month)
+        .reduce((sum, t) => sum + t.amount, 0);
+      const balance = r2(Math.max(0, pocket.limit - spent));
+      writeBalance(pocketId, balance);
+      pocket = { ...pocket, balance };
+    }
     return ok({ pocket: presentPocket(pocket) });
   } finally {
     unlock(lock);

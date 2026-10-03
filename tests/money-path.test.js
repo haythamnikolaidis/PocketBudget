@@ -483,3 +483,34 @@ test('USERS: the report splits spend between the configured names', () => {
   assert.doesNotMatch(flat, /Alex/);
   s.restore();
 });
+
+/* --------------------------------------------------- archive / restore -- */
+
+test('ARCHIVE: getState lists archived pockets separately from the active ones', () => {
+  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 800, 'Active'], ['P02', 'Old', 'Chase', 50, 5, 'Archived']] });
+  const st = viaDispatcher('getState', {});
+  assert.deepEqual(st.pockets.map((p) => p.id), ['P01']);
+  assert.deepEqual(st.archivedPockets, [{ id: 'P02', name: 'Old', account: 'Chase', limit: 50 }]);
+  s.restore();
+});
+
+test('ARCHIVE: restoring a pocket gives it what this month\'s spending leaves, not its stale balance', () => {
+  const s = setup({
+    pockets: [['P02', 'Old', 'Chase', 200, 5, 'Archived']],       // archived with R5 left, long ago
+    txns: [['T1001', new Date(), 'Alex', 'P02', 30, 'this month'],
+           ['T1002', new Date('2020-01-05T10:00:00Z'), 'Alex', 'P02', 500, 'ancient']],
+  });
+  const r = viaDispatcher('updatePocket', { pocketId: 'P02', unarchive: true });
+  assert.equal(r.ok, true);
+  assert.equal(r.pocket.balance, 170, '200 limit - 30 spent this month');
+  assert.equal(s.wb.pockets._rows[1][5], 'Active');
+  assert.equal(s.wb.pockets._rows[1][4], 170);
+  s.restore();
+});
+
+test('ARCHIVE: "unarchive" on a pocket that is already active leaves its balance alone', () => {
+  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 321, 'Active']] });
+  viaDispatcher('updatePocket', { pocketId: 'P01', unarchive: true });
+  assert.equal(s.balance(), 321);
+  s.restore();
+});

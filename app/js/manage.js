@@ -45,6 +45,12 @@ function isArchived(p) {
   return p.status === 'Archived' || p.archived === true;
 }
 
+/** Archived pockets (name only: they cannot be edited, just restored). */
+function archivedPockets(state) {
+  const list = state && Array.isArray(state.archivedPockets) ? state.archivedPockets : [];
+  return list.filter((p) => p && p.id != null);
+}
+
 /** Active pockets, in the order the backend supplied them. */
 function activePockets(state) {
   const list = state && Array.isArray(state.pockets) ? state.pockets : [];
@@ -129,6 +135,17 @@ function raiseNote(newLimit, pocket) {
   );
 }
 
+/** One archived pocket: its name and a Restore button. */
+function archivedRowHtml(p) {
+  const id = esc(p.id);
+  return (
+    `<li class="pb-manage__archived-row flex items-center justify-between gap-3 py-2" data-pocket-id="${id}">` +
+    `<span class="min-w-0 truncate text-sm text-slate-400">${esc(p.name)}</span>` +
+    `<button type="button" class="rounded-lg border border-slate-500 px-2.5 py-1 text-xs font-semibold` +
+    ` text-slate-200" data-action="restore" data-pocket-id="${id}">Restore</button></li>`
+  );
+}
+
 /* ------------------------------------------------------------- mounting -- */
 
 /**
@@ -153,6 +170,7 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
   const nameInput = pick('manage-name');
   const accountInput = pick('manage-account');
   const limitInput = pick('manage-limit');
+  const archivedList = pick('manage-archived');
   const submitBtn = pick('manage-submit');
   const reasonEl = pick('manage-reason');
 
@@ -189,6 +207,7 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
   /* ------------------------------------------------------------ render -- */
 
   const render = () => {
+    renderArchived();
     const pockets = activePockets(current);
     if (pockets.length === 0) {
       paint(list, '<p class="pb-empty px-1 py-6 text-center text-sm text-slate-500">' +
@@ -197,6 +216,18 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
     }
     paint(list, '<ul class="pb-manage__list space-y-3">' +
       pockets.map(rowHtml).join('') + '</ul>');
+  };
+
+  const renderArchived = () => {
+    if (!archivedList) return;
+    const hidden = archivedPockets(current);
+    if (hidden.length === 0) {
+      paint(archivedList, '');
+      return;
+    }
+    paint(archivedList, '<h2 class="mt-8 text-sm font-semibold uppercase tracking-wide text-slate-400">' +
+      'Archived</h2><ul class="pb-manage__archived mt-2 divide-y divide-slate-800">' +
+      hidden.map(archivedRowHtml).join('') + '</ul>');
   };
 
   /* ------------------------------------------------------------- form -- */
@@ -266,6 +297,12 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
     announce();
   };
 
+  const restore = async (pocket) => {
+    await api.updatePocket({ pocketId: String(pocket.id), unarchive: true });
+    notify(`Restored ${String(pocket.name ?? '').trim()}.`);
+    announce();
+  };
+
   const archive = async (pocket) => {
     await api.updatePocket({ pocketId: String(pocket.id), archive: true });
     if (editingId === String(pocket.id)) {
@@ -318,6 +355,21 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
         .catch((err) => { say(describe(err)); })
         .finally(() => { busy = false; });
     }
+  };
+
+  const onArchivedClick = (ev) => {
+    const btn = ev && ev.target && typeof ev.target.closest === 'function'
+      ? ev.target.closest('[data-action="restore"]')
+      : null;
+    if (!btn || busy) return;
+    const id = String((btn.dataset || {}).pocketId || '');
+    const pocket = archivedPockets(current).find((p) => String(p.id) === id);
+    if (!pocket) return;
+    busy = true;
+    Promise.resolve()
+      .then(() => restore(pocket))
+      .catch((err) => { say(describe(err)); })
+      .finally(() => { busy = false; });
   };
 
   const onLimitInput = () => {
@@ -390,6 +442,7 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
 
   const bindings = [
     [list, 'click', onListClick],
+    [archivedList, 'click', onArchivedClick],
     [form, 'submit', onSubmit],
     [limitInput, 'input', onLimitInput],
   ];

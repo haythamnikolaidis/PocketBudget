@@ -67,7 +67,7 @@ function makeEl(id = '') {
  */
 function fakeShell() {
   const ids = ['manage-list', 'manage-form', 'manage-name', 'manage-account',
-               'manage-limit', 'manage-submit', 'manage-reason'];
+               'manage-limit', 'manage-submit', 'manage-reason', 'manage-archived'];
   const nodes = {};
   for (const id of ids) nodes[id] = makeEl(id);
   nodes['manage-form'].type = 'form';
@@ -529,4 +529,53 @@ test('if the pocket being edited is archived elsewhere, the edit is cancelled wi
 test('updateManageState ignores a handle it does not recognise', () => {
   assert.doesNotThrow(() => updateManageState(null, {}));
   assert.doesNotThrow(() => updateManageState(() => {}, {}));
+});
+
+
+/* ------------------------------------------------- archived pockets (restore) -- */
+
+function archivedClick(pocketId) {
+  const target = {
+    dataset: { action: 'restore', pocketId },
+    closest(sel) { return sel === '[data-action="restore"]' ? target : null; },
+  };
+  return { type: 'click', target };
+}
+
+test('archived pockets are listed with a Restore button, and names are escaped', async () => {
+  await withFakeDom(async () => {
+    const m = await mount([POCKET], { state: { ...stateWith([POCKET]),
+      archivedPockets: [{ id: 'P07', name: '<img src=x onerror=1>', account: '', limit: 50 }] } });
+    const html = m.nodes['manage-archived'].html;
+    assert.match(html, /Archived/);
+    assert.match(html, /data-action="restore"/);
+    assert.match(html, /data-pocket-id="P07"/);
+    assert.doesNotMatch(html, /<img/i);
+  });
+});
+
+test('no Archived section when nothing is archived', async () => {
+  await withFakeDom(async () => {
+    const m = await mount([POCKET]);
+    assert.equal(m.nodes['manage-archived'].html, '');
+  });
+});
+
+test('Restore sends unarchive:true for that pocket, then calls onChanged', async () => {
+  await withFakeDom(async () => {
+    const m = await mount([POCKET], { state: { ...stateWith([POCKET]),
+      archivedPockets: [{ id: 'P07', name: 'Old', account: '', limit: 50 }] } });
+    await Promise.all(fire(m.nodes['manage-archived'], 'click', archivedClick('P07')));
+    assert.deepEqual(m.api.calls.updatePocket, [{ pocketId: 'P07', unarchive: true }]);
+    assert.equal(m.changedCount(), 1);
+    assert.match(m.toasts[0], /Restored Old/);
+  });
+});
+
+test('a refresh repaints the Archived section', async () => {
+  await withFakeDom(async () => {
+    const m = await mount([POCKET]);
+    updateManageState(m.teardown, { ...stateWith([POCKET]), archivedPockets: [{ id: 'P09', name: 'Gifts', account: '', limit: 10 }] });
+    assert.match(m.nodes['manage-archived'].html, /Gifts/);
+  });
 });
