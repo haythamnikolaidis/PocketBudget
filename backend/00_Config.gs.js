@@ -1,7 +1,15 @@
 // CANONICAL SOURCE. `backend/*.gs` is generated from this file by `npm run build`.
 
-/** Household members allowed to log expenses. Display names, exact match. */
+/**
+ * Household members allowed to log expenses. Display names, exact match.
+ * This is only the DEFAULT: the live list is the `USERS` Script Property
+ * (comma-separated, e.g. "Thandi,Pieter"), read by getUsers() in 02_Auth, so
+ * renaming the household does not mean editing code and redeploying.
+ */
 export const USERS = ['Alex', 'Sam'];
+
+/** Script Properties key holding the comma-separated household member names. */
+export const USERS_PROPERTY = 'USERS';
 
 /** Sheet tab names. Reference these everywhere; never hard-code a sheet name in logic. */
 export const SHEETS = {

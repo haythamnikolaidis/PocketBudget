@@ -7,14 +7,14 @@
 // ever touches its own bound sheet — ask for the narrowest scope that works.
 
 import { handleRequest } from './05_Api.gs.js';
-import { verifyToken, getApiToken, setApiToken } from './02_Auth.gs.js';
+import { verifyToken, getApiToken, setApiToken, getUsers } from './02_Auth.gs.js';
 import {
   readPockets, readTransactions, getReportSheet, ensureSheets, flushWrites,
 } from './03_Sheets.gs.js';
 import { applyRollover, shouldRollover, monthKey } from './04_Rollover.gs.js';
 import { renderReport } from './06_Report.gs.js';
 import { writeBalance } from './03_Sheets.gs.js';
-import { USERS, SHEETS, LOCK_TIMEOUT_MS } from './00_Config.gs.js';
+import { USERS, USERS_PROPERTY, SHEETS, LOCK_TIMEOUT_MS } from './00_Config.gs.js';
 
 /** Serialize a response as ContentService JSON. */
 function json(res) {
@@ -132,6 +132,7 @@ export function refreshReport(now = new Date()) {
     pockets: readPockets(),
     transactions: readTransactions(),
     now,
+    users: getUsers(),
   });
 }
 
@@ -167,6 +168,10 @@ export function setup() {
   const props = PropertiesService.getScriptProperties();
   if (!props.getProperty('LAST_ROLLOVER_KEY')) props.setProperty('LAST_ROLLOVER_KEY', monthKey(new Date()));
 
+  // Make the household member list visible and editable in Project Settings >
+  // Script Properties, rather than buried in code.
+  if (!props.getProperty(USERS_PROPERTY)) props.setProperty(USERS_PROPERTY, USERS.join(','));
+
   // Idempotent: running setup() again must not stack a second trigger (two
   // triggers means two rollovers and two report rebuilds a night).
   for (const t of ScriptApp.getProjectTriggers()) {
@@ -179,6 +184,6 @@ export function setup() {
     .create();
 
   Logger.log('Sheets ready: ' + sheets.join(', '));
-  Logger.log('Users: ' + USERS.join(', '));
+  Logger.log('Users: ' + getUsers().join(', ') + '  (change with the USERS Script Property)');
   Logger.log('Household token (copy this into the PWA setup screen): ' + token);
 }

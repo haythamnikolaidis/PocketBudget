@@ -11,7 +11,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTransaction, createPocket, deleteTransaction, updatePocket, handleRequest } from '../backend/05_Api.gs.js';
-import { dailyRollover } from '../backend/07_Entry.gs.js';
+import { dailyRollover, setup as setupFn } from '../backend/07_Entry.gs.js';
 import { installGlobals, createProps } from './helpers/appsScriptGlobals.js';
 import { freshWorkbook } from './helpers/fixtures.js';
 
@@ -443,5 +443,43 @@ test('VALIDATION: createPocket applies the same length limits', () => {
   assert.equal(viaDispatcher('createPocket', { name: 'x'.repeat(61), limit: 10 }).error, 'INVALID_NAME');
   assert.equal(viaDispatcher('createPocket', { name: 'ok', account: 'y'.repeat(61), limit: 10 }).error, 'INVALID_NAME');
   assert.equal(viaDispatcher('createPocket', { name: 'ok', limit: 10 }).ok, true);
+  s.restore();
+});
+
+/* ---------------------------------------------- configurable household (users) -- */
+
+test('USERS: the household comes from the USERS Script Property, not from code', () => {
+  const s = setup({ props: { USERS: ' Thandi , Pieter ,Thandi,' } });
+  assert.equal(spend({ user: 'Thandi' }).ok, true);
+  assert.equal(viaDispatcher('createTransaction', { user: 'Alex', pocketId: 'P01', amount: 1 }).error, 'INVALID_USER');
+  assert.deepEqual(viaDispatcher('getState', {}).summary.users, ['Thandi', 'Pieter'], 'trimmed, de-duplicated');
+  s.restore();
+});
+
+test('USERS: with the property unset or blank the built-in default applies', () => {
+  for (const props of [{}, { USERS: '' }, { USERS: ' , ' }]) {
+    const s = setup({ props });
+    assert.deepEqual(viaDispatcher('getState', {}).summary.users, ['Alex', 'Sam']);
+    s.restore();
+  }
+});
+
+test('USERS: setup() publishes the default so it can be edited in Script Properties', () => {
+  const s = setup();
+  globalThis.ScriptApp = { getProjectTriggers: () => [], deleteTrigger() {}, newTrigger: () => { const b = { timeBased: () => b, everyDays: () => b, atHour: () => b, create() {} }; return b; } };
+  try {
+    setupFn();
+    assert.equal(globalThis.PropertiesService.getScriptProperties().getProperty('USERS'), 'Alex,Sam');
+  } finally { delete globalThis.ScriptApp; }
+  s.restore();
+});
+
+test('USERS: the report splits spend between the configured names', () => {
+  const s = setup({ props: { USERS: 'Thandi,Pieter', LAST_ROLLOVER_KEY: new Date().toISOString().slice(0, 7) } });
+  dailyRollover();
+  const flat = s.wb.report._rows.map((r) => r.join('|')).join('\n');
+  assert.match(flat, /Thandi/);
+  assert.match(flat, /Pieter/);
+  assert.doesNotMatch(flat, /Alex/);
   s.restore();
 });

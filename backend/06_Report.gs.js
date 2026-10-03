@@ -13,11 +13,11 @@ export function daysElapsedInMonth(now = new Date(), daysInMonth = 31) {
 }
 
 /** Total spend within `month`, broken down by pocket and by user. */
-export function summariseSpend(transactions, pockets, month) {
+export function summariseSpend(transactions, pockets, month, users = USERS) {
   const known = new Set(pockets.map((p) => p.id));
   const byPocket = {};
   const byUser = {};
-  for (const u of USERS) byUser[u] = 0;
+  for (const u of users) byUser[u] = 0;
 
   let total = 0;
   let count = 0;
@@ -70,8 +70,8 @@ export const MIN_DAYS_FOR_RUN_RATE = 3;
  * Columns of the pocket table: Month | Pocket | Bank Account | Monthly Limit | Spent |
  *          Remaining | Balance Now | Pct Used | Severity | Projected
  */
-export function buildReport({ pockets, transactions, month, now = new Date(), daysInMonth = 31 }) {
-  const spend = summariseSpend(transactions, pockets, month);
+export function buildReport({ pockets, transactions, month, now = new Date(), daysInMonth = 31, users = USERS }) {
+  const spend = summariseSpend(transactions, pockets, month, users);
   const elapsed = daysElapsedInMonth(now, daysInMonth);
 
   const rows = [[
@@ -101,12 +101,12 @@ export function buildReport({ pockets, transactions, month, now = new Date(), da
   rows.push([]);
   layout.spouseHeader = rows.length + 1;
   rows.push(['SPOUSE SPLIT', 'Total Spend', 'Share']);
-  for (const u of USERS) {
+  for (const u of users) {
     const amt = spend.byUser[u] || 0;
     const share = spend.total > 0 ? Math.round((amt / spend.total) * 1000) / 10 : 0;
     rows.push([escapeCell(u), Math.round(amt * 100) / 100, share + '%']);
   }
-  layout.spouseCount = USERS.length;
+  layout.spouseCount = users.length;
 
   rows.push([]);
   rows.push(['Month', 'Total Limit', 'Total Spent', 'Total Balance']);
@@ -187,10 +187,10 @@ function rebuildCharts(sheet, layout, width) {
 }
 
 /** Write the report block and (re)build the native charts. Called by the daily trigger. */
-export function renderReport(sheet, { pockets, transactions, now = new Date() }) {
+export function renderReport(sheet, { pockets, transactions, now = new Date(), users = USERS }) {
   const month = monthKey(now);
   const daysInMonth = daysInLocalMonth(now);
-  const { rows, layout } = buildReport({ pockets, transactions, month, now, daysInMonth });
+  const { rows, layout } = buildReport({ pockets, transactions, month, now, daysInMonth, users });
   const width = rows[0].length;
 
   sheet.clearContents();

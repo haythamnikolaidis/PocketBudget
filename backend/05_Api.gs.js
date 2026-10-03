@@ -8,11 +8,11 @@
 //      after the writes made under it have been flushed to the sheet.
 //   4. No handler throws to the client; failures come back as { ok:false, error }.
 
-import { ACTIONS, USERS, SHEETS, LOCK_TIMEOUT_MS, MAX_NAME_LENGTH } from './00_Config.gs.js';
+import { ACTIONS, SHEETS, LOCK_TIMEOUT_MS, MAX_NAME_LENGTH } from './00_Config.gs.js';
 import {
   toDollars, parseAmountInput, isValidUser, isValidRequestId, money, ok, fail,
 } from './01_Utils.gs.js';
-import { verifyToken } from './02_Auth.gs.js';
+import { verifyToken, getUsers } from './02_Auth.gs.js';
 import {
   readPockets, readTransactions, findPocketRow, writeBalance,
   appendTransaction, appendPocket, updatePocketRow, archivePocketRow,
@@ -103,7 +103,7 @@ export function getState(params) {
       totalLimit: sum('limit'),
       totalBalance: sum('balance'),
       totalSpent: sum('spent'),
-      users: [...USERS],
+      users: getUsers(),
     },
   });
 }
@@ -206,7 +206,7 @@ export function createTransaction(params) {
   if (!verifyToken(params.token)) return fail('UNAUTHORIZED', 'Invalid or missing token.');
 
   const user = String(params.user ?? '');
-  if (!isValidUser(user)) return fail('INVALID_USER', 'Unknown user: ' + user);
+  if (!isValidUser(user, getUsers())) return fail('INVALID_USER', 'Unknown user: ' + user);
 
   const pocketId = String(params.pocketId ?? '');
   const note = String(params.note ?? '').trim().slice(0, 120);

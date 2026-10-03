@@ -73,6 +73,11 @@ Users: Alex, Sam
 Household token (copy this into the PWA setup screen): <long hex string>
 ```
 
+The household members are the **USERS** Script Property (`Alex,Sam` by default).
+To use your own names, edit it in Apps Script → Project Settings → Script
+Properties, comma-separated (for example `Thandi,Pieter`). No redeploy needed;
+phones pick it up on the next refresh.
+
 **Copy that token.** It is the only time it is shown in full. If you lose it,
 delete the `API_TOKEN` script property and run `setup()` again.
 

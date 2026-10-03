@@ -38,7 +38,7 @@ import { formatMoney, isValidAmount, parseAmountText } from './format.js';
  * "invalid state" is not communication.
  */
 const NO_POCKET_REASON = 'Add a pocket before logging an expense.';
-const NO_USER_REASON = 'Add your name in Settings before logging an expense.';
+const NO_USER_REASON = 'No household members are set up on the server. Set the USERS Script Property.';
 const AMOUNT_REASON = 'Enter an amount greater than zero.';
 
 function lockedReason(name) {

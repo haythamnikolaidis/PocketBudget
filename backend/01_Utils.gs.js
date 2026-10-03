@@ -94,8 +94,8 @@ export function escapeCell(value) {
 
 /* ------------------------------------------------------------ validation -- */
 
-export function isValidUser(name) {
-  return typeof name === 'string' && USERS.includes(name);
+export function isValidUser(name, users = USERS) {
+  return typeof name === 'string' && users.includes(name);
 }
 
 /** Pocket IDs are `P` + at least two digits, uppercase. */
