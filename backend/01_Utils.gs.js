@@ -21,11 +21,18 @@ export function normaliseAmountText(input) {
   return s.replace(/,/g, '');
 }
 
+/**
+ * A normalised amount is plain decimal digits: 12, 12.5, 12., .5 (and -12, so a
+ * negative gets its own message). `Number()` alone also accepts 1e3, 0x10, 0b1,
+ * Infinity and +5 — each a way to type a different amount from the one you meant.
+ */
+const DECIMAL = /^-?(\d+\.?\d*|\.\d+)$/;
+
 /** Parse a rand-ish value into integer cents. Rejects anything non-numeric. */
 export function toCents(v) {
   if (typeof v === 'boolean') throw new Error('Not a number: ' + v);
   const cleaned = normaliseAmountText(v);
-  const n = cleaned === '' ? NaN : Number(cleaned);
+  const n = DECIMAL.test(cleaned) ? Number(cleaned) : NaN;
   if (!Number.isFinite(n)) throw new Error('Not a number: ' + v);
   return Math.round(n * 100);
 }
@@ -58,7 +65,7 @@ export function toDollars(cents) {
 export function parseAmountInput(input) {
   if (typeof input === 'boolean') throw new Error('Not a number: ' + input);
   const cleaned = normaliseAmountText(input);
-  if (cleaned === '') throw new Error('Not a number: ' + input);
+  if (!DECIMAL.test(cleaned)) throw new Error('Not a number: ' + input);
 
   const n = Number(cleaned);
   if (!Number.isFinite(n)) throw new Error('Not a number: ' + input);

@@ -140,3 +140,19 @@ test('balanceAfterLimitChange: the balance moves with the limit, within 0..newLi
   assert.equal(balanceAfterLimitChange(800, 800, 1000), 1000, 'an untouched pocket tracks its limit');
   assert.equal(balanceAfterLimitChange(0.1, 0.3, 0.6), 0.4, 'no float drift');
 });
+
+test('JS number syntax is not an amount: 1e3, 0x10, 0b1, Infinity and +5 are all rejected', () => {
+  for (const bad of ['1e3', '1E3', '0x10', '0b101', '0o7', 'Infinity', '+5', '5e-1', '1_000', '--5', '5-', '1.2.3', '.', '']) {
+    assert.throws(() => parseAmountInput(bad), /Not a number/, bad);
+    assert.throws(() => toCents(bad), /Not a number/, bad);
+  }
+});
+
+test('ordinary amounts are unaffected by the stricter parsing', () => {
+  assert.equal(parseAmountInput('12'), 1200);
+  assert.equal(parseAmountInput('12.'), 1200);
+  assert.equal(parseAmountInput('.5'), 50);
+  assert.equal(parseAmountInput('0.07'), 7);
+  assert.equal(parseAmountInput(65.2), 6520);
+  assert.throws(() => parseAmountInput('-5'), /positive/, 'a negative still gets its own message');
+});

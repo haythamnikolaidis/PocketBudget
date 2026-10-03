@@ -111,3 +111,15 @@ test('relativeDay uses the viewer\'s own calendar, not UTC (Johannesburg, 01:30 
     if (prev === undefined) delete process.env.TZ; else process.env.TZ = prev;
   }
 });
+
+test('the client rejects JS number syntax exactly like the server', async () => {
+  const { parseAmountInput } = await import('../backend/01_Utils.gs.js');
+  for (const bad of ['1e3', '0x10', 'Infinity', '+5', '1_000', '1.2.3', '.']) {
+    assert.equal(isValidAmount(bad), false, bad);
+    assert.ok(Number.isNaN(parseAmountText(bad)), bad);
+    assert.throws(() => parseAmountInput(bad), /Not a number/, bad);
+  }
+  for (const good of ['12', '12.', '.5', '12,50', 'R1 234,56']) {
+    assert.equal(isValidAmount(good), true, good);
+  }
+});

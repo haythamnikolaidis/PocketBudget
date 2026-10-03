@@ -20,10 +20,13 @@ export function normaliseAmountText(input) {
   return s.replace(/,/g, '');
 }
 
-/** A typed amount as a Number, or NaN when it is not one. */
+/** Plain decimal digits only; mirror of DECIMAL in backend/01_Utils.gs.js. */
+const DECIMAL = /^-?(\d+\.?\d*|\.\d+)$/;
+
+/** A typed amount as a Number, or NaN when it is not one (1e3, 0x10, Infinity, +5 are not). */
 export function parseAmountText(input) {
   const s = normaliseAmountText(input);
-  return s === '' ? NaN : Number(s);
+  return DECIMAL.test(s) ? Number(s) : NaN;
 }
 
 /**
