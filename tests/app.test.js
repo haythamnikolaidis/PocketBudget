@@ -83,7 +83,6 @@ function makeEl(id = '', tag = 'div') {
   const el = {
     id,
     tagName: String(tag).toUpperCase(),
-    dataset: {},
     attributes: {},
     children: [],
     parentNode: null,
@@ -96,6 +95,12 @@ function makeEl(id = '', tag = 'div') {
     focused: false,
     _listeners: new Map(),
   };
+
+  // Like a real element, `dataset` is a getter-only accessor: reassigning it
+  // throws a TypeError in strict mode. A plain writable property here hid a
+  // production bug where Test connection did nothing at all.
+  const dataset = {};
+  Object.defineProperty(el, 'dataset', { get: () => dataset, enumerable: true });
 
   el.classList = {
     add(...names) { for (const n of names) el.classNames.add(n); },

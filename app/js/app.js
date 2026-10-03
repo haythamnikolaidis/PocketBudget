@@ -74,7 +74,10 @@ export function showToast(el, message, kind = 'info') {
     el.classList.remove('hidden');
     el.classList.add(`pb-toast--${safeKind}`);
   }
-  el.dataset = el.dataset || {};
+  // `dataset` is a read-only accessor on real elements: assigning to it throws a
+  // TypeError in strict mode (every ES module). Only create one for a host that
+  // has none, and never reassign it where it exists.
+  if (!el.dataset) el.dataset = {};
   el.dataset.kind = safeKind;
 
   // The `hidden` property keeps the element out of the a11y tree even where the
@@ -653,7 +656,7 @@ export function boot(deps = {}) {
   function setSetupStatus(message, kind = 'info') {
     if (!els.setupStatus) return;
     els.setupStatus.textContent = message;
-    els.setupStatus.dataset = els.setupStatus.dataset || {};
+    if (!els.setupStatus.dataset) els.setupStatus.dataset = {};
     els.setupStatus.dataset.kind = kind;
   }
 
