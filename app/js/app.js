@@ -568,6 +568,7 @@ export function boot(deps = {}) {
           doc,
           toast: (message, kind) => toast(message, kind),
           onAdded: () => { track(refresh({ fresh: true })); },
+          onStale: () => { track(refresh()); },
           onError: (err) => { toast(describeError(err), 'error'); },
         });
       } else {

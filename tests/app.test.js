@@ -1487,3 +1487,20 @@ test('a depleted pocket\'s card button does nothing', async () => {
   assert.equal(h.byId.get('view-home').hidden, false, 'stays on home');
   handle.teardown();
 });
+
+test('an insufficient-funds refusal makes the app refetch balances', async () => {
+  const h = makeHarness();
+  const api = fakeApi();
+  api.createTransaction = async () => { throw Object.assign(new Error('Insufficient funds in Groceries. Remaining: R1.00'), { name: 'ApiError', code: 'INSUFFICIENT_FUNDS' }); };
+  const handle = await bootIn(h, { config: configuredConfig(), api });
+  await handle.ready;
+  assert.equal(api.calls.getState, 1);
+
+  h.byId.get('add-amount').value = '500';
+  h.byId.get('add-pocket').value = 'P01';
+  await h.byId.get('add-form').dispatch('submit');
+  await handle.pending();
+
+  assert.equal(api.calls.getState, 2, 'balances reloaded after the refusal');
+  handle.teardown();
+});

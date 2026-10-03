@@ -150,6 +150,7 @@ function makeOption(doc, tag, value, label, disabled) {
  * @param {string[]} [o.users]    Household members; falls back to state.summary.users.
  * @param {Function} [o.onAdded]  Called after a successful add so the feed refreshes.
  * @param {Function} [o.onError]  Called with any error that is not INSUFFICIENT_FUNDS.
+ * @param {Function} [o.onStale]  Called after INSUFFICIENT_FUNDS: the balances on screen were out of date.
  * @param {Function} [o.toast]    toast(message, kind) for transient messages.
  * @returns {Function} teardown — detaches every listener this mount installed.
  *
@@ -157,7 +158,7 @@ function makeOption(doc, tag, value, label, disabled) {
  * updateAddFormState(), so a parent that refreshes state does not need a second
  * value threaded through its own module.
  */
-export function mountAddForm({ root, api, state, users, onAdded, onError, toast, doc, userStore } = {}) {
+export function mountAddForm({ root, api, state, users, onAdded, onError, onStale, toast, doc, userStore } = {}) {
   const document_ = doc || globalThis.document;
 
   const form = pick(root, document_, 'add-form');
@@ -377,6 +378,9 @@ export function mountAddForm({ root, api, state, users, onAdded, onError, toast,
         // VERBATIM. The brief specifies this exact string; rewording it is a
         // regression, so err.message goes to the toast untouched.
         if (typeof toast === 'function') toast(err.message, 'error');
+        // The refusal means what the screen showed was out of date (the other
+        // phone spent first). Reload so the pocket list shows the real balance.
+        if (typeof onStale === 'function') onStale(err);
       } else {
         const known = Boolean(err && DEFINITIVE_REJECTIONS.has(err.code));
         const message = known

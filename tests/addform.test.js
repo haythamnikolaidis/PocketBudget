@@ -671,3 +671,20 @@ test('storage that throws (a private window) never breaks the form', async () =>
   await m.view.submit.dispatch('click');
   assert.equal(m.calls[0].user, 'Sam');
 });
+
+test('an insufficient-funds refusal asks the app to reload, so the screen shows the real balance', async () => {
+  let stale = 0;
+  const m = mount({ opts: { onStale: () => { stale += 1; } } });
+  m.api.createTransaction = () => Promise.reject(new ApiError('INSUFFICIENT_FUNDS', 'Insufficient funds in Groceries. Remaining: R1.00'));
+  await save(m, '50');
+  assert.equal(stale, 1);
+  assert.equal(m.toasts.at(-1).msg, 'Insufficient funds in Groceries. Remaining: R1.00', 'wording untouched');
+});
+
+test('other failures do not trigger the stale reload', async () => {
+  let stale = 0;
+  const m = mount({ opts: { onStale: () => { stale += 1; } } });
+  m.api.createTransaction = () => Promise.reject(new ApiError('NETWORK', 'x'));
+  await save(m, '5');
+  assert.equal(stale, 0);
+});
