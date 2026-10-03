@@ -514,3 +514,51 @@ test('ARCHIVE: "unarchive" on a pocket that is already active leaves its balance
   assert.equal(s.balance(), 321);
   s.restore();
 });
+
+/* ------------------------------------------------------ read costs (perf) -- */
+
+/** Count how many times each sheet's getRange is called while `fn` runs. */
+function countReads(wb, fn) {
+  const counts = { pockets: 0, txns: 0 };
+  const wrap = (sheet, key) => {
+    const real = sheet.getRange.bind(sheet);
+    sheet.getRange = (...a) => { counts[key] += 1; return real(...a); };
+  };
+  wrap(wb.pockets, 'pockets'); wrap(wb.txns, 'txns');
+  fn();
+  return counts;
+}
+
+test('PERF: getState reads the Transactions sheet once, not twice', () => {
+  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 700, 'Active']],
+    txns: [['T1001', new Date(), 'Alex', 'P01', 5, ''], ['T1002', new Date(), 'Sam', 'P01', 6, '']] });
+  const c = countReads(s.wb, () => viaDispatcher('getState', {}));
+  assert.equal(c.txns, 1);
+  assert.equal(c.pockets, 1);
+  s.restore();
+});
+
+test('PERF: logging an expense reaches into the Pockets sheet three times, not four', () => {
+  const s = setup();
+  const c = countReads(s.wb, () => spend());
+  // read the pockets once; find the row and write the balance
+  assert.ok(c.pockets <= 3, 'pocket sheet touched ' + c.pockets + ' times');
+  s.restore();
+});
+
+test('PERF: the Request ID header is checked once, not on every write', () => {
+  const s = setup();
+  spend({ requestId: 'req-0001-aaaa' });
+  const c = countReads(s.wb, () => spend({ requestId: 'req-0002-bbbb' }));
+  assert.equal(globalThis.PropertiesService.getScriptProperties().getProperty('REQUEST_ID_HEADER'), 'done');
+  assert.ok(c.txns <= 6, 'transactions sheet touched ' + c.txns + ' times on the second write');
+  s.restore();
+});
+
+test('SORT: with equal timestamps the higher id number comes first (T10000 after T9999)', async () => {
+  const { readTransactions } = await import('../backend/03_Sheets.gs.js');
+  const t = new Date('2026-10-01T10:00:00Z');
+  const s = setup({ txns: [['T9999', t, 'Alex', 'P01', 1, ''], ['T10000', t, 'Alex', 'P01', 1, ''], ['T1001', t, 'Alex', 'P01', 1, '']] });
+  assert.deepEqual(readTransactions().map((x) => x.id), ['T10000', 'T9999', 'T1001']);
+  s.restore();
+});

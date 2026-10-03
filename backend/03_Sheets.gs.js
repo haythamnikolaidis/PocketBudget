@@ -82,9 +82,12 @@ export function readTransactions({ limit = 0 } = {}) {
     amount: num(r[4]),
     note: String(r[5] || ''),
   }));
+  // Newest first; equal timestamps fall back to the ID NUMBER (a string compare
+  // would put T10000 before T9999).
+  const idNumber = (id) => Number(String(id).replace(/\D/g, '')) || 0;
   txns.sort((a, b) => {
     const at = a.timestamp || '', bt = b.timestamp || '';
-    if (at === bt) return b.id.localeCompare(a.id);
+    if (at === bt) return idNumber(b.id) - idNumber(a.id);
     return bt.localeCompare(at);
   });
   return limit > 0 ? txns.slice(0, limit) : txns;
@@ -112,6 +115,19 @@ function findTransactionRow(txnId) {
     if (String(ids[i][0]) === txnId) return i + 2;
   }
   return 0;
+}
+
+/**
+ * Sheets created before idempotency existed have no 7th header. Label the column
+ * once; a Script Property remembers that it is done, so the hot path does not
+ * read the header cell on every write.
+ */
+function ensureRequestIdHeader(sheet) {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('REQUEST_ID_HEADER') === 'done') return;
+  const header = sheet.getRange(1, 7);
+  if (header.getValues()[0][0] === '') header.setValue('Request ID');
+  props.setProperty('REQUEST_ID_HEADER', 'done');
 }
 
 /**
@@ -204,11 +220,7 @@ export function appendTransaction({ user, pocketId, amount, note, timestamp, req
   const sheet = getTransactionSheet();
   const id = issueId(nextTransactionIdFromSheet(), PROP_LAST_TXN);
   sheet.appendRow([id, timestamp || new Date(), user, pocketId, amount, escapeCell(note), requestId || '']);
-  if (requestId) {
-    // Sheets created before idempotency existed have no 7th header.
-    const header = sheet.getRange(1, 7);
-    if (header.getValues()[0][0] === '') header.setValue('Request ID');
-  }
+  if (requestId) ensureRequestIdHeader(sheet);
   return id;
 }
 

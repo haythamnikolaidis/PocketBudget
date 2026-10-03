@@ -87,10 +87,14 @@ export function getState(params) {
   const archivedPockets = everyPocket
     .filter((p) => p.status === 'Archived')
     .map((p) => ({ id: p.id, name: p.name, account: p.account, limit: r2(p.limit) }));
-  const transactions = readTransactions({ limit: 10 });
+  // One read of the Transactions sheet, not two: it is sorted newest-first, so the
+  // feed is just its head. (This used to read and sort the whole sheet twice per
+  // refresh, on a sheet that only grows.)
+  const everyTransaction = readTransactions();
+  const transactions = everyTransaction.slice(0, 10);
 
   const spentByPocket = {};
-  for (const t of readTransactions()) {
+  for (const t of everyTransaction) {
     if (!t.timestamp || monthKey(new Date(t.timestamp)) !== month) continue;
     spentByPocket[t.pocketId] = (spentByPocket[t.pocketId] || 0) + t.amount;
   }
@@ -265,12 +269,11 @@ export function createTransaction(params) {
       });
     }
 
-    const row = findPocketRow(pocketId);
-    if (!row) return fail('POCKET_NOT_FOUND', 'Pocket not found: ' + pocketId);
-
-    // Re-read under the lock: authoritative, not client-supplied.
+    // Re-read under the lock: authoritative, not client-supplied. (One read; a
+    // separate findPocketRow beforehand was a second round trip for nothing.)
     const pocket = readPockets({ includeArchived: true }).find((p) => p.id === pocketId);
-    if (!pocket || pocket.status !== 'Active') {
+    if (!pocket) return fail('POCKET_NOT_FOUND', 'Pocket not found: ' + pocketId);
+    if (pocket.status !== 'Active') {
       return fail('POCKET_NOT_FOUND', 'Pocket is not available: ' + pocketId);
     }
 
