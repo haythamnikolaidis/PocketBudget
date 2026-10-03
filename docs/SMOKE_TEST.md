@@ -32,7 +32,8 @@ This proves or disproves the central design decision.
 
 **Pass looks like:**
 
-- One `GET` to `script.google.com/macros/s/…/exec`
+- One `POST` to `script.google.com/macros/s/…/exec` (every call is a POST, so the
+  token is in the request body and **never in the URL**)
 - Followed by a **302** to `script.googleusercontent.com`
 - Then **200** with a JSON response
 - **No `OPTIONS` request anywhere in the list**

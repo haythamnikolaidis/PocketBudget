@@ -1228,8 +1228,7 @@ test('the real makeApi + makeConfig drive boot end to end over a fake fetch', as
   const requests = [];
   const fetchImpl = async (url, init) => {
     requests.push({ url: String(url), init });
-    const action = new URL(String(url), 'https://x.test').searchParams.get('action')
-      || (init && init.body ? JSON.parse(init.body).action : '');
+    const action = init && init.body ? JSON.parse(init.body).action : '';
     // api.js unwraps an { ok } envelope, so the fake MUST send one.
     const payload = action === 'getState' ? { ok: true, ...STATE } : { ok: true, version: '1.0.0' };
     return { ok: true, status: 200, json: async () => payload };
@@ -1244,8 +1243,9 @@ test('the real makeApi + makeConfig drive boot end to end over a fake fetch', as
   await handle.ready;
 
   assert.equal(requests.length, 1, 'exactly one network request on load');
-  assert.match(requests[0].url, /action=getState/);
-  assert.match(requests[0].url, /token=household-token-123/);
+  assert.equal(requests[0].init.method, 'POST');
+  assert.deepEqual(JSON.parse(requests[0].init.body), { action: 'getState', token: 'household-token-123' });
+  assert.ok(!requests[0].url.includes('household-token-123'), 'the token is never in the URL');
   assert.equal(h.byId.get('pockets').innerHTML.includes('Groceries'), true);
   assert.equal(h.byId.get('activity').innerHTML.includes('Whole Foods'), true);
   assert.equal(h.byId.get('stale-banner').hidden, true);
@@ -1261,9 +1261,9 @@ test('a poisoned fetch leaves the stale banner up and never claims fresh data', 
   const h = makeHarness();
   const config = configuredConfig();
   let healthy = true;
-  const fetchImpl = async (url) => {
+  const fetchImpl = async (url, init) => {
     if (!healthy) throw new TypeError('Failed to fetch');
-    const action = new URL(String(url), 'https://x.test').searchParams.get('action');
+    const action = JSON.parse(init.body).action;
     const payload = action === 'getState' ? { ok: true, ...STATE } : { ok: true };
     return { ok: true, status: 200, json: async () => payload };
   };

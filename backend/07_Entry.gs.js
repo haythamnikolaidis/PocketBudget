@@ -48,7 +48,10 @@ export function parseRequest(e, method) {
 }
 
 /**
- * GET entry point.
+ * GET entry point. DEPRECATED for the app, which now sends every call (reads
+ * included) as a POST so the token is not in the URL. Kept so a phone still
+ * running the old cached frontend keeps working until it reloads.
+ *
  *
  * NOTE ON TRANSPORT (§0): GET is CORS-safelisted, so no preflight is sent and
  * fetch's default redirect:'follow' handles Apps Script's 302 to

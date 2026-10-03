@@ -40,7 +40,7 @@ function okJson(body) {
   };
 }
 
-test('getState sends a GET with the action and token in the query string', async () => {
+test('getState is a POST: the token travels in the body, never in the URL', async () => {
   const seen = [];
   const api = apiWith(async (url, opts) => {
     seen.push({ url, opts });
@@ -50,21 +50,29 @@ test('getState sends a GET with the action and token in the query string', async
   await api.getState();
 
   assert.equal(seen.length, 1);
-  assert.equal(seen[0].opts.method, 'GET');
-  assert.match(seen[0].url, /action=getState/);
-  assert.match(seen[0].url, /token=tok/);
-  // The token must never appear in a URL that gets logged by a proxy.
-  assert.ok(!seen[0].opts.body, 'a GET must not carry a body');
+  assert.equal(seen[0].opts.method, 'POST');
+  assert.equal(seen[0].opts.headers['Content-Type'], 'text/plain;charset=utf-8', 'no CORS preflight');
+  assert.deepEqual(JSON.parse(seen[0].opts.body), { action: 'getState', token: 'tok' });
+  assert.ok(!/token|action/.test(seen[0].url), 'nothing sensitive in the URL: ' + seen[0].url);
+});
+
+test('ping is a POST too, so Test connection never puts the token in a URL', async () => {
+  const seen = [];
+  const api = apiWith(async (url, opts) => { seen.push({ url, opts }); return okJson({ ok: true, version: '1.0.0' }); });
+  await api.ping();
+  assert.equal(seen[0].opts.method, 'POST');
+  assert.equal(JSON.parse(seen[0].opts.body).action, 'ping');
+  assert.ok(!seen[0].url.includes('tok'));
 });
 
 test('getState passes the month through when supplied', async () => {
   const seen = [];
-  const api = apiWith(async (url) => {
-    seen.push(url);
+  const api = apiWith(async (url, opts) => {
+    seen.push(JSON.parse(opts.body));
     return okJson({ ok: true });
   });
   await api.getState('2026-10');
-  assert.match(seen[0], /month=2026-10/);
+  assert.equal(seen[0].month, '2026-10');
 });
 
 test('TRANSPORT: createTransaction POSTs text/plain, never application/json', async () => {
