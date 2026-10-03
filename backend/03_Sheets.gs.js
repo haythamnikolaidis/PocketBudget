@@ -2,7 +2,7 @@
 // CANONICAL SOURCE. The ONLY module that touches SpreadsheetApp.
 
 import { SHEETS, REQUEST_ID_LOOKBACK_ROWS } from './00_Config.gs.js';
-import { nextPocketId, nextTransactionId, isValidPocketId, balanceAfterLimitChange } from './01_Utils.gs.js';
+import { nextPocketId, nextTransactionId, isValidPocketId, balanceAfterLimitChange, escapeCell } from './01_Utils.gs.js';
 
 /** Script Properties holding the highest pocket / transaction number ever issued. */
 const PROP_LAST_POCKET = 'LAST_POCKET_NUM';
@@ -173,7 +173,8 @@ export function writeBalance(pocketId, balance) {
 export function appendPocket({ name, account, limit }) {
   const sheet = getPocketSheet();
   const id = issueId(nextPocketIdFromSheet(), PROP_LAST_POCKET);
-  sheet.appendRow([id, name, account, limit, limit, 'Active']);
+  // escapeCell: a name like =IMPORTDATA(...) would otherwise be stored as a live formula.
+  sheet.appendRow([id, escapeCell(name), escapeCell(account), limit, limit, 'Active']);
   return { id, name, account, limit, balance: limit, status: 'Active' };
 }
 
@@ -181,8 +182,8 @@ export function updatePocketRow(pocketId, { name, account, limit, status }) {
   const row = findPocketRow(pocketId);
   if (!row) throw new Error('Pocket not found: ' + pocketId);
   const sheet = getPocketSheet();
-  if (name != null) sheet.getRange(row, 2).setValue(name);
-  if (account != null) sheet.getRange(row, 3).setValue(account);
+  if (name != null) sheet.getRange(row, 2).setValue(escapeCell(name));
+  if (account != null) sheet.getRange(row, 3).setValue(escapeCell(account));
   if (limit != null) {
     const oldLimit = num(sheet.getRange(row, 4).getValues()[0][0]);
     const cur = num(sheet.getRange(row, 5).getValues()[0][0]);
@@ -202,7 +203,7 @@ export function archivePocketRow(pocketId) {
 export function appendTransaction({ user, pocketId, amount, note, timestamp, requestId }) {
   const sheet = getTransactionSheet();
   const id = issueId(nextTransactionIdFromSheet(), PROP_LAST_TXN);
-  sheet.appendRow([id, timestamp || new Date(), user, pocketId, amount, note || '', requestId || '']);
+  sheet.appendRow([id, timestamp || new Date(), user, pocketId, amount, escapeCell(note), requestId || '']);
   if (requestId) {
     // Sheets created before idempotency existed have no 7th header.
     const header = sheet.getRange(1, 7);
