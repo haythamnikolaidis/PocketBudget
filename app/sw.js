@@ -23,13 +23,13 @@
  * Cache namespace for this release.
  *
  * GENERATED — do not edit by hand. `npm run build` replaces the value below
- * with a content hash of 16 precached files, and `npm run check` fails if it is stale.
+ * with a content hash of 17 precached files, and `npm run check` fails if it is stale.
  *
  * This was hand-maintained once and that was a mistake: a deploy shipped
  * without bumping it, the previous cache survived activate(), and users kept
  * running pre-fix code with no error to explain it.
  */
-const CACHE_VERSION = 'pocketbudget-1d557c8f2cdc';
+const CACHE_VERSION = 'pocketbudget-4d2ead4c74e2';
 
 
 // The static app shell. Relative to the SW scope (the site root).
@@ -40,6 +40,7 @@ const PRECACHE_URLS = [
   './',
   './index.html',
   './offline.html',
+  './tailwind.css',
   './styles.css',
   './js/config.js',
   './js/format.js',

@@ -226,7 +226,7 @@ test('precache list is a top-level constant and contains the whole app shell', (
   const list = readConst(SW_SOURCE, 'PRECACHE_URLS');
   assert.ok(Array.isArray(list), 'PRECACHE_URLS must be an array');
   const required = [
-    './index.html', './offline.html', './styles.css', './manifest.webmanifest',
+    './index.html', './offline.html', './styles.css', './tailwind.css', './manifest.webmanifest',
     './js/config.js', './js/format.js', './js/api.js', './js/render.js',
     './js/addform.js', './js/manage.js', './js/app.js',
     './icons/icon-192.png', './icons/icon-512.png',
