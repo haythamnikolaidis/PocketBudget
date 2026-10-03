@@ -28,7 +28,7 @@
 // `<img src=x onerror=...>` is inert text. See render.js for the same reasoning
 // on the HTML-string path.
 
-import { formatMoney, isValidAmount } from './format.js';
+import { formatMoney, isValidAmount, parseAmountText } from './format.js';
 
 /* --------------------------------------------------------------- messages -- */
 
@@ -38,7 +38,7 @@ import { formatMoney, isValidAmount } from './format.js';
  * "invalid state" is not communication.
  */
 const NO_POCKET_REASON = 'Add a pocket before logging an expense.';
-const NO_USER_REASON = 'Add your name in Settings before logging an expense.';
+const NO_USER_REASON = 'No household members are set up on the server. Set the USERS Script Property.';
 const AMOUNT_REASON = 'Enter an amount greater than zero.';
 
 function lockedReason(name) {
@@ -60,6 +60,19 @@ const DEFINITIVE_REJECTIONS = new Set([
 const UNCERTAIN_REASON = 'Could not confirm the expense was saved. '
   + 'Tap Save again — it will not be recorded twice.';
 
+/** Storage key remembering which household member this phone belongs to. */
+const USER_KEY = 'pb.user';
+
+/** The browser's local storage when it works (private modes can throw), else null. */
+function defaultUserStore() {
+  try {
+    const s = globalThis.localStorage;
+    return s && typeof s.getItem === 'function' ? s : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 /** A fresh idempotency key: a UUID where available, else a random string of the same shape. */
 function newRequestId() {
   const c = globalThis.crypto;
@@ -68,9 +81,9 @@ function newRequestId() {
   return rand() + '-' + rand() + '-' + Date.now().toString(16);
 }
 
-/** Strip $ , and spaces, then coerce to a Number. Mirrors isValidAmount. */
+/** Typed amount as a Number (R, spaces and decimal commas understood). Mirrors isValidAmount. */
 function parseAmount(input) {
-  return Number(String(input ?? '').replace(/[$,\s]/g, ''));
+  return parseAmountText(input);
 }
 
 /* ------------------------------------------------------------- element io -- */
@@ -137,6 +150,7 @@ function makeOption(doc, tag, value, label, disabled) {
  * @param {string[]} [o.users]    Household members; falls back to state.summary.users.
  * @param {Function} [o.onAdded]  Called after a successful add so the feed refreshes.
  * @param {Function} [o.onError]  Called with any error that is not INSUFFICIENT_FUNDS.
+ * @param {Function} [o.onStale]  Called after INSUFFICIENT_FUNDS: the balances on screen were out of date.
  * @param {Function} [o.toast]    toast(message, kind) for transient messages.
  * @returns {Function} teardown — detaches every listener this mount installed.
  *
@@ -144,7 +158,7 @@ function makeOption(doc, tag, value, label, disabled) {
  * updateAddFormState(), so a parent that refreshes state does not need a second
  * value threaded through its own module.
  */
-export function mountAddForm({ root, api, state, users, onAdded, onError, toast, doc } = {}) {
+export function mountAddForm({ root, api, state, users, onAdded, onError, onStale, toast, doc, userStore } = {}) {
   const document_ = doc || globalThis.document;
 
   const form = pick(root, document_, 'add-form');
@@ -166,6 +180,17 @@ export function mountAddForm({ root, api, state, users, onAdded, onError, toast,
     || (pocketEl && pocketEl.ownerDocument)
     || globalThis.document
     || null;
+
+  // Which household member is holding this phone. The select defaulted to the first
+  // name, so Sam had to re-pick "Sam" on every launch or the expense (and the
+  // report's spouse split) was quietly credited to Alex.
+  const store = userStore === undefined ? defaultUserStore() : userStore;
+  const savedUser = () => {
+    try { return store ? String(store.getItem(USER_KEY) || '') : ''; } catch (_) { return ''; }
+  };
+  const rememberUser = (name) => {
+    try { if (store && name) store.setItem(USER_KEY, name); } catch (_) { /* a private window: fine */ }
+  };
 
   const listeners = [];
   function on(target, type, fn) {
@@ -209,7 +234,7 @@ export function mountAddForm({ root, api, state, users, onAdded, onError, toast,
 
   /* --------------------------------------------------------- rendering -- */
 
-  /** 'Groceries — $340.50 left', with a depleted suffix on a locked pocket. */
+  /** 'Groceries — R340.50 left', with a depleted suffix on a locked pocket. */
   function pocketLabel(p) {
     const base = String(p.name ?? '').trim() || String(p.id ?? '');
     const left = formatMoney(p.balance);
@@ -254,7 +279,8 @@ export function mountAddForm({ root, api, state, users, onAdded, onError, toast,
         if (name === '') continue;
         userEl.appendChild(makeOption(ownerDoc, 'option', name, name, false));
       }
-      const keptUser = prevUser && listUsers().some((u) => String(u) === prevUser) ? prevUser : '';
+      const listed = (name) => Boolean(name) && listUsers().some((u) => String(u) === name);
+      const keptUser = listed(prevUser) ? prevUser : (listed(savedUser()) ? savedUser() : '');
       if (keptUser) userEl.value = keptUser;
     }
   }
@@ -352,6 +378,9 @@ export function mountAddForm({ root, api, state, users, onAdded, onError, toast,
         // VERBATIM. The brief specifies this exact string; rewording it is a
         // regression, so err.message goes to the toast untouched.
         if (typeof toast === 'function') toast(err.message, 'error');
+        // The refusal means what the screen showed was out of date (the other
+        // phone spent first). Reload so the pocket list shows the real balance.
+        if (typeof onStale === 'function') onStale(err);
       } else {
         const known = Boolean(err && DEFINITIVE_REJECTIONS.has(err.code));
         const message = known
@@ -376,6 +405,7 @@ export function mountAddForm({ root, api, state, users, onAdded, onError, toast,
   });
   on(submitEl, 'click', () => submit());
   on(pocketEl, 'change', () => syncSubmitState());
+  on(userEl, 'change', () => rememberUser(userEl.value));
   on(amountEl, 'input', () => syncSubmitState());
   on(amountEl, 'keydown', (ev) => {
     // Enter submits, so the 5-second path is type-number-Enter with no aiming.
@@ -418,6 +448,20 @@ export function mountAddForm({ root, api, state, users, onAdded, onError, toast,
   teardown.getState = () => current;
   teardown.elements = { form, amountEl, pocketEl, noteEl, userEl, submitEl, reasonEl };
   teardown.isSubmitting = () => inFlight;
+
+  /**
+   * Pre-select a pocket (the home screen's "Add expense" button) and put the
+   * cursor in the amount field. A depleted or unknown pocket is ignored, so the
+   * form never starts on something that cannot be spent from.
+   */
+  teardown.selectPocket = (id) => {
+    const p = pocketById(String(id));
+    if (!p || isLocked(p) || !pocketEl) return false;
+    pocketEl.value = String(p.id);
+    syncSubmitState();
+    if (amountEl && typeof amountEl.focus === 'function') amountEl.focus();
+    return true;
+  };
 
   /**
    * Replace the payload and re-render. Lives on the closure because `current`

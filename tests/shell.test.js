@@ -112,3 +112,26 @@ test('the toast is a light card with dark text, not bare text on the dark page',
   assert.ok(dark < 0.05, `text ${fg[1]} must be dark`);
   assert.ok((light + 0.05) / (dark + 0.05) >= 7, 'contrast must be at least 7:1');
 });
+
+/* -------------------------------------------- compiled Tailwind (no CDN) -- */
+
+test('the page uses the committed tailwind.css, not the runtime CDN', () => {
+  assert.doesNotMatch(html, /cdn\.tailwindcss\.com/);
+  assert.doesNotMatch(html, /tailwind\.config\s*=/);
+  assert.match(html, /<link rel="stylesheet" href="tailwind\.css">/);
+  assert.ok(html.indexOf('tailwind.css') < html.indexOf('styles.css'), 'our overrides load after Tailwind');
+});
+
+test('every Tailwind class used in index.html exists in the compiled stylesheet', () => {
+  const compiled = readFileSync(new URL('../app/tailwind.css', import.meta.url), 'utf8');
+  const OURS = /^(pb-|tab$|dark$|scroll-thin$)/;
+  const missing = new Set();
+  for (const m of html.matchAll(/class="([^"]*)"/g)) {
+    for (const cls of m[1].split(/\s+/).filter(Boolean)) {
+      if (OURS.test(cls)) continue;
+      const selector = '.' + cls.replace(/([:/.\[\]%#,()])/g, '\\$1');
+      if (!compiled.includes(selector)) missing.add(cls);
+    }
+  }
+  assert.deepEqual([...missing], [], 'run `npm run build:css`; missing: ' + [...missing].join(' '));
+});

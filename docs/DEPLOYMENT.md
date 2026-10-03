@@ -19,7 +19,9 @@ From a blank Google Sheet to a running app on two phones.
    `backend/appsscript.json`.
 4. The timezone is set to `Africa/Johannesburg` and is confirmed correct. This
    matters: the rollover trigger runs at 02:00 local and the run-rate day count
-   depends on it. Only change it if the household moves timezones.
+   depends on it. Only change it if the household moves timezones — and if you do,
+   also change `UTC_OFFSET_MINUTES` in `backend/00_Config.gs.js` (120 = UTC+2),
+   which decides which month an expense belongs to.
 
 ---
 
@@ -70,6 +72,11 @@ Sheets ready: Pockets, Transactions, Monthly_Report
 Users: Alex, Sam
 Household token (copy this into the PWA setup screen): <long hex string>
 ```
+
+The household members are the **USERS** Script Property (`Alex,Sam` by default).
+To use your own names, edit it in Apps Script → Project Settings → Script
+Properties, comma-separated (for example `Thandi,Pieter`). No redeploy needed;
+phones pick it up on the next refresh.
 
 **Copy that token.** It is the only time it is shown in full. If you lose it,
 delete the `API_TOKEN` script property and run `setup()` again.

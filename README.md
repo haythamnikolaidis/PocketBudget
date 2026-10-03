@@ -74,8 +74,10 @@ npm run check   # build the Apps Script bundle + run the tests
 app/            the PWA — this is what GitHub Pages publishes
   index.html    shell: setup / home / add / manage views
   js/           config, format, api (transport), render, addform, manage, app
+  tailwind.css  compiled Tailwind (committed; `npm run build:css` regenerates it)
   sw.js         service worker — precaches the shell, never the API
   icons/        generated PNGs + verify-icons.mjs
+tailwind/       Tailwind config + input for build:css (output is app/tailwind.css)
 backend/        Apps Script source (canonical: *.gs.js ES modules)
   build.mjs     flattens *.gs.js into Backend.bundle.gs for pasting
   serve.mjs     local static server
@@ -102,8 +104,9 @@ Tests import the `.gs.js` modules directly, so no build is needed to run them.
 ## Core rules
 
 - **Balances can never go negative.** The server rejects an over-budget expense
-  with `Insufficient funds in <Pocket>. Remaining: $<balance>` and mutates
+  with `Insufficient funds in <Pocket>. Remaining: R<balance>` and mutates
   nothing. Spending the *exact* remaining balance is allowed and locks the pocket.
+- **A retried expense is recorded once.** Each expense carries a `requestId`; if a reply is lost and the user taps Save again, the server recognises the id and returns the original instead of spending twice.
 - **Concurrent writes are locked.** Deductions happen under `LockService`, with
   the balance re-read inside the lock, so two phones submitting at once cannot
   produce a lost update.
@@ -118,7 +121,7 @@ Tests import the `.gs.js` modules directly, so no build is needed to run them.
 
 ## Testing
 
-`npm test` runs ~200 assertions with no test-framework dependency.
+`npm test` runs ~440 tests with no test-framework dependency.
 
 Coverage worth knowing about:
 
@@ -140,6 +143,7 @@ Coverage worth knowing about:
 | `npm test` | full suite |
 | `npm run build` | generate `Backend.bundle.gs` |
 | `npm run check` | build + test (what CI runs) |
+| `npm run build:css` | recompile `app/tailwind.css` after adding or changing a Tailwind class (CI fails if it is stale) |
 | `npm run dev` | serve `app/` on :8080 |
 | `node app/icons/verify-icons.mjs` | assert the PWA icons are the right size |
 | `scripts/fetch-bundle.sh` | download the CI-verified bundle for Apps Script |
@@ -150,7 +154,8 @@ Coverage worth knowing about:
 ## Security notes
 
 - The household token lives in Apps Script Script Properties and in browser
-  `localStorage`. It is never in git.
+  `localStorage`. It is never in git, and it travels in the POST body, never in a URL.
+- Household member names are the `USERS` Script Property (default `Alex,Sam`).
 - Deploy the web app as **Execute as: Me** and **Who has access: Anyone**.
   Choosing "Anyone with a Google account" changes the auth model.
 - Rotating the token is one change in Script Properties.

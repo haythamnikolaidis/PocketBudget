@@ -17,25 +17,13 @@
   <meta name="apple-mobile-web-app-title" content="PocketBudget">
 
   <!--
-    Tailwind via CDN: no build step, which is the whole point of this project.
-    For a two-household internal app this is a deliberate trade. Swap for a
-    compiled stylesheet before this app is ever exposed publicly.
+    Tailwind, compiled ahead of time into tailwind.css (committed; see
+    tailwind/tailwind.config.cjs). It used to be the runtime CDN script, which is
+    render-blocking, not meant for production, and left the page unstyled
+    whenever it could not be fetched. Regenerate with `npm run build:css` after
+    adding or changing a class; CI fails if the committed file is stale.
   -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            ink: '#0f172a',
-            accent: '#10b981',
-          },
-          // Respect the notch and the home indicator.
-          spacing: { 'safe-bottom': 'env(safe-area-inset-bottom)' },
-        },
-      },
-    };
-  </script>
+  <link rel="stylesheet" href="tailwind.css">
   <link rel="stylesheet" href="styles.css">
 </head>
 
@@ -172,13 +160,14 @@
     <section id="view-manage" class="hidden" aria-labelledby="manage-heading">
       <h1 id="manage-heading" class="text-2xl font-semibold">Pockets</h1>
       <div id="manage-list" class="mt-4 space-y-3"></div>
+      <div id="manage-archived"></div>
 
       <h2 class="mt-8 text-sm font-semibold uppercase tracking-wide text-slate-400">New pocket</h2>
       <form id="manage-form" class="mt-3 space-y-3" novalidate>
-        <input id="manage-name" name="name" type="text" placeholder="Groceries" autocomplete="off"
+        <input id="manage-name" name="name" type="text" placeholder="Groceries" autocomplete="off" maxlength="60"
                class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm
                       focus:border-accent focus:outline-none">
-        <input id="manage-account" name="account" type="text" placeholder="Bank account (optional)" autocomplete="off"
+        <input id="manage-account" name="account" type="text" placeholder="Bank account (optional)" autocomplete="off" maxlength="60"
                class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm
                       focus:border-accent focus:outline-none">
         <input id="manage-limit" name="limit" type="text" inputmode="decimal" placeholder="Monthly limit"

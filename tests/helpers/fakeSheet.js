@@ -31,6 +31,12 @@ export function createSheet(name, rows = []) {
         _snapshot: snapshot,
         getValues: () => snapshot.map((r) => [...r]),
         setValues(vals) {
+          // Real Sheets throws unless the array is exactly numRows x numCols. A fake
+          // that accepted ragged arrays hid a report that failed every night.
+          if (vals.length !== numRows || vals.some((v) => v.length !== numCols)) {
+            throw new Error('The number of rows/columns in the data does not match the range (' +
+              numRows + 'x' + numCols + ').');
+          }
           for (let r = 0; r < vals.length; r++) {
             const target = r0 + r;
             if (!self._rows[target]) self._rows[target] = new Array(numCols).fill('');

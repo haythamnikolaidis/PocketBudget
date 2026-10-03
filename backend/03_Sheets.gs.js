@@ -2,7 +2,15 @@
 // CANONICAL SOURCE. The ONLY module that touches SpreadsheetApp.
 
 import { SHEETS, REQUEST_ID_LOOKBACK_ROWS } from './00_Config.gs.js';
-import { nextPocketId, nextTransactionId, isValidPocketId } from './01_Utils.gs.js';
+import { nextPocketId, nextTransactionId, isValidPocketId, balanceAfterLimitChange, escapeCell } from './01_Utils.gs.js';
+
+/** Script Properties holding the highest pocket / transaction number ever issued. */
+const PROP_LAST_POCKET = 'LAST_POCKET_NUM';
+const PROP_LAST_TXN = 'LAST_TXN_NUM';
+
+function lastIssued(key) {
+  return Number(PropertiesService.getScriptProperties().getProperty(key)) || 0;
+}
 
 /* --------------------------------------------------------------- plumbing -- */
 
@@ -74,9 +82,12 @@ export function readTransactions({ limit = 0 } = {}) {
     amount: num(r[4]),
     note: String(r[5] || ''),
   }));
+  // Newest first; equal timestamps fall back to the ID NUMBER (a string compare
+  // would put T10000 before T9999).
+  const idNumber = (id) => Number(String(id).replace(/\D/g, '')) || 0;
   txns.sort((a, b) => {
     const at = a.timestamp || '', bt = b.timestamp || '';
-    if (at === bt) return b.id.localeCompare(a.id);
+    if (at === bt) return idNumber(b.id) - idNumber(a.id);
     return bt.localeCompare(at);
   });
   return limit > 0 ? txns.slice(0, limit) : txns;
@@ -107,6 +118,19 @@ function findTransactionRow(txnId) {
 }
 
 /**
+ * Sheets created before idempotency existed have no 7th header. Label the column
+ * once; a Script Property remembers that it is done, so the hot path does not
+ * read the header cell on every write.
+ */
+function ensureRequestIdHeader(sheet) {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('REQUEST_ID_HEADER') === 'done') return;
+  const header = sheet.getRange(1, 7);
+  if (header.getValues()[0][0] === '') header.setValue('Request ID');
+  props.setProperty('REQUEST_ID_HEADER', 'done');
+}
+
+/**
  * Look for an already-recorded transaction carrying this `requestId`, among the
  * newest rows only. Used to make a retried expense idempotent: when the first
  * attempt committed but its response was lost, the retry finds it here instead
@@ -134,12 +158,12 @@ export function findTransactionByRequestId(requestId, lookback = REQUEST_ID_LOOK
   return null;
 }
 
-/** A transaction's `{ id, pocketId, amount }` WITHOUT removing it, or null if absent. */
+/** A transaction's `{ id, timestamp, pocketId, amount }` WITHOUT removing it, or null if absent. */
 export function getTransactionRecord(txnId) {
   const row = findTransactionRow(txnId);
   if (!row) return null;
   const vals = getTransactionSheet().getRange(row, 1, 1, 6).getValues()[0];
-  return { id: String(vals[0]), pocketId: String(vals[3]), amount: num(vals[4]) };
+  return { id: String(vals[0]), timestamp: isoDate(vals[1]), pocketId: String(vals[3]), amount: num(vals[4]) };
 }
 
 /**
@@ -164,8 +188,9 @@ export function writeBalance(pocketId, balance) {
 
 export function appendPocket({ name, account, limit }) {
   const sheet = getPocketSheet();
-  const id = nextPocketIdFromSheet();
-  sheet.appendRow([id, name, account, limit, limit, 'Active']);
+  const id = issueId(nextPocketIdFromSheet(), PROP_LAST_POCKET);
+  // escapeCell: a name like =IMPORTDATA(...) would otherwise be stored as a live formula.
+  sheet.appendRow([id, escapeCell(name), escapeCell(account), limit, limit, 'Active']);
   return { id, name, account, limit, balance: limit, status: 'Active' };
 }
 
@@ -173,13 +198,14 @@ export function updatePocketRow(pocketId, { name, account, limit, status }) {
   const row = findPocketRow(pocketId);
   if (!row) throw new Error('Pocket not found: ' + pocketId);
   const sheet = getPocketSheet();
-  if (name != null) sheet.getRange(row, 2).setValue(name);
-  if (account != null) sheet.getRange(row, 3).setValue(account);
+  if (name != null) sheet.getRange(row, 2).setValue(escapeCell(name));
+  if (account != null) sheet.getRange(row, 3).setValue(escapeCell(account));
   if (limit != null) {
-    sheet.getRange(row, 4).setValue(limit);
-    // Keep balance within the new limit; never negative, never above limit.
+    const oldLimit = num(sheet.getRange(row, 4).getValues()[0][0]);
     const cur = num(sheet.getRange(row, 5).getValues()[0][0]);
-    sheet.getRange(row, 5).setValue(Math.min(Math.max(cur, 0), limit));
+    sheet.getRange(row, 4).setValue(limit);
+    // The balance moves with the limit (see balanceAfterLimitChange).
+    sheet.getRange(row, 5).setValue(balanceAfterLimitChange(cur, oldLimit, limit));
   }
   if (status != null) sheet.getRange(row, 6).setValue(status);
   return readPockets({ includeArchived: true }).find((p) => p.id === pocketId) || null;
@@ -192,13 +218,9 @@ export function archivePocketRow(pocketId) {
 /** Append a transaction. Returns the new transaction ID. */
 export function appendTransaction({ user, pocketId, amount, note, timestamp, requestId }) {
   const sheet = getTransactionSheet();
-  const id = nextTransactionIdFromSheet();
-  sheet.appendRow([id, timestamp || new Date(), user, pocketId, amount, note || '', requestId || '']);
-  if (requestId) {
-    // Sheets created before idempotency existed have no 7th header.
-    const header = sheet.getRange(1, 7);
-    if (header.getValues()[0][0] === '') header.setValue('Request ID');
-  }
+  const id = issueId(nextTransactionIdFromSheet(), PROP_LAST_TXN);
+  sheet.appendRow([id, timestamp || new Date(), user, pocketId, amount, escapeCell(note), requestId || '']);
+  if (requestId) ensureRequestIdHeader(sheet);
   return id;
 }
 
@@ -220,14 +242,22 @@ export function deleteTransactionRow(txnId) {
   return record;
 }
 
-export function nextPocketIdFromSheet() {
-  const rows = dataRows(getPocketSheet());
-  return nextPocketId(rows.map((r) => String(r[0])));
+/** Record that an ID has been handed out, so it can never be issued again. */
+function issueId(id, propertyKey) {
+  PropertiesService.getScriptProperties().setProperty(propertyKey, String(parseInt(String(id).slice(1), 10)));
+  return id;
 }
 
+/** The ID the next pocket will get: above every row AND every ID ever issued. Does not reserve it. */
+export function nextPocketIdFromSheet() {
+  const rows = dataRows(getPocketSheet());
+  return nextPocketId(rows.map((r) => String(r[0])), lastIssued(PROP_LAST_POCKET));
+}
+
+/** The ID the next transaction will get; see nextPocketIdFromSheet. */
 export function nextTransactionIdFromSheet() {
   const rows = dataRows(getTransactionSheet());
-  return nextTransactionId(rows.map((r) => String(r[0])));
+  return nextTransactionId(rows.map((r) => String(r[0])), lastIssued(PROP_LAST_TXN));
 }
 
 /* -------------------------------------------------------------- bootstrap -- */

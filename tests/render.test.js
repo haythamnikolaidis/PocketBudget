@@ -165,9 +165,9 @@ test('pocketCardHtml escapes the account name too', () => {
 
 test('pocketCardHtml shows the balance of the limit, formatted as money', () => {
   const html = pocketCardHtml(POCKET);
-  assert.ok(html.includes('$340.50'), 'balance');
-  assert.ok(html.includes('$800.00'), 'limit');
-  assert.match(html, /\$340\.50[\s\S]{0,80}of[\s\S]{0,80}\$800\.00/);
+  assert.ok(html.includes('R340.50'), 'balance');
+  assert.ok(html.includes('R800.00'), 'limit');
+  assert.match(html, /R340\.50[\s\S]{0,80}of[\s\S]{0,80}R800\.00/);
 });
 
 test('pocketCardHtml renders a progress bar at pctUsed percent', () => {
@@ -244,7 +244,7 @@ test('pocketCardHtml on an unlocked pocket leaves the affordance enabled', () =>
 test('pocketCardHtml survives a pocket with missing numeric fields', () => {
   const html = pocketCardHtml({ id: 'P09', name: 'No Numbers' });
   assert.ok(html.includes('width: 0%'), html);
-  assert.ok(html.includes('$0.00'), html);
+  assert.ok(html.includes('R0.00'), html);
 });
 
 /* ---------------------------------------------------- activity row HTML -- */
@@ -279,7 +279,7 @@ test('activityRowHtml escapes the transaction id inside data-txn-id', () => {
 test('activityRowHtml shows user, formatted amount, note, and relative day', () => {
   const html = activityRowHtml(txn({ timestamp: isoDaysAgo(0) }), { P01: 'Groceries' });
   assert.ok(html.includes('Alex'), 'user tag');
-  assert.ok(html.includes('$65.20'), 'amount');
+  assert.ok(html.includes('R65.20'), 'amount');
   assert.ok(html.includes('Whole Foods'), 'note');
   assert.ok(html.includes('Today'), 'relativeDay');
 });

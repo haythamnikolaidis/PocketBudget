@@ -676,6 +676,30 @@ test('registerServiceWorker asks a waiting worker to skip waiting but never relo
   assert.deepEqual(posted[0], { type: 'SKIP_WAITING' });
 });
 
+test('an installing worker is nudged once it has installed (statechange is a real DOM event)', async () => {
+  const win = makeWindow({ protocol: 'https:', hostname: 'pocketbudget.example' });
+  const posted = [];
+  const listeners = [];
+  const installing = {
+    state: 'installing',
+    postMessage: (msg) => posted.push(msg),
+    // The real API is addEventListener. The code used a method that does not exist
+    // (addStateListener), so this branch could never run in a browser.
+    addEventListener: (type, fn) => listeners.push([type, fn]),
+  };
+  const registration = { waiting: null, installing, active: { state: 'activated' } };
+  win.navigator.serviceWorker.register = () => Promise.resolve(registration);
+
+  await registerServiceWorker(win);
+  assert.equal(listeners.length, 1);
+  assert.equal(listeners[0][0], 'statechange');
+  assert.equal(posted.length, 0, 'not before it has installed');
+
+  installing.state = 'installed';
+  listeners[0][1]();
+  assert.deepEqual(posted, [{ type: 'SKIP_WAITING' }]);
+});
+
 test('registerServiceWorker does not blow up when the promise rejects', async () => {
   const win = makeWindow({ protocol: 'https:', hostname: 'pocketbudget.example' });
   win.navigator.serviceWorker.register = () => Promise.reject(new Error('SecurityError'));
@@ -1013,7 +1037,7 @@ test('delete asks first, names the expense, and does nothing if declined', async
   h.byId.get('activity').dispatch('click', { target: del });
   await handle.pending();
   assert.equal(asked.length, 1);
-  assert.match(asked[0], /\$65\.20/);
+  assert.match(asked[0], /R65\.20/);
   assert.match(asked[0], /Whole Foods/);
   assert.deepEqual(api.calls.deleteTransaction, [], 'declined: nothing is deleted');
 
@@ -1204,8 +1228,7 @@ test('the real makeApi + makeConfig drive boot end to end over a fake fetch', as
   const requests = [];
   const fetchImpl = async (url, init) => {
     requests.push({ url: String(url), init });
-    const action = new URL(String(url), 'https://x.test').searchParams.get('action')
-      || (init && init.body ? JSON.parse(init.body).action : '');
+    const action = init && init.body ? JSON.parse(init.body).action : '';
     // api.js unwraps an { ok } envelope, so the fake MUST send one.
     const payload = action === 'getState' ? { ok: true, ...STATE } : { ok: true, version: '1.0.0' };
     return { ok: true, status: 200, json: async () => payload };
@@ -1220,8 +1243,9 @@ test('the real makeApi + makeConfig drive boot end to end over a fake fetch', as
   await handle.ready;
 
   assert.equal(requests.length, 1, 'exactly one network request on load');
-  assert.match(requests[0].url, /action=getState/);
-  assert.match(requests[0].url, /token=household-token-123/);
+  assert.equal(requests[0].init.method, 'POST');
+  assert.deepEqual(JSON.parse(requests[0].init.body), { action: 'getState', token: 'household-token-123' });
+  assert.ok(!requests[0].url.includes('household-token-123'), 'the token is never in the URL');
   assert.equal(h.byId.get('pockets').innerHTML.includes('Groceries'), true);
   assert.equal(h.byId.get('activity').innerHTML.includes('Whole Foods'), true);
   assert.equal(h.byId.get('stale-banner').hidden, true);
@@ -1237,9 +1261,9 @@ test('a poisoned fetch leaves the stale banner up and never claims fresh data', 
   const h = makeHarness();
   const config = configuredConfig();
   let healthy = true;
-  const fetchImpl = async (url) => {
+  const fetchImpl = async (url, init) => {
     if (!healthy) throw new TypeError('Failed to fetch');
-    const action = new URL(String(url), 'https://x.test').searchParams.get('action');
+    const action = JSON.parse(init.body).action;
     const payload = action === 'getState' ? { ok: true, ...STATE } : { ok: true };
     return { ok: true, status: 200, json: async () => payload };
   };
@@ -1357,5 +1381,126 @@ test('Change connection opens setup; Cancel returns to the feed and refetches', 
   assert.equal(h.nav.hidden, false);
   assert.equal(api.calls.getState, 2);
 
+  handle.teardown();
+});
+
+test('the home summary is written in rand', async () => {
+  const h = makeHarness();
+  const handle = await bootIn(h, { config: configuredConfig(), api: fakeApi() });
+  await handle.ready;
+  assert.match(h.byId.get('home-summary').textContent, /^37% of R920\.00 left$/);
+  handle.teardown();
+});
+
+test('deleting an expense from an earlier month says the balance did not change', async () => {
+  const h = makeHarness();
+  const api = fakeApi();
+  api.deleteTransaction = async (id) => { api.calls.deleteTransaction.push(id); return { ok: true, refunded: false }; };
+  const handle = await bootIn(h, { config: configuredConfig(), api });
+  await handle.ready;
+
+  const del = makeEl('', 'button');
+  del.setAttribute('data-action', 'delete-txn');
+  del.setAttribute('data-txn-id', 'T1001');
+  h.byId.get('activity').appendChild(del);
+  h.byId.get('activity').dispatch('click', { target: del });
+  await handle.pending();
+
+  assert.match(h.byId.get('toast').textContent, /earlier month, so the balance is unchanged/);
+  handle.teardown();
+});
+
+/* ---------------------------------------------- refresh after a write -- */
+
+test('a refresh asked for after a write is not satisfied by a fetch already in flight', async () => {
+  const h = makeHarness();
+  const old = { ...STATE, pockets: [{ ...STATE.pockets[0], balance: 340.5 }, STATE.pockets[1]] };
+  const fresh = { ...STATE, pockets: [{ ...STATE.pockets[0], balance: 300 }, STATE.pockets[1]] };
+  let calls = 0;
+  const gates = [];
+  const api = fakeApi();
+  api.getState = () => {
+    calls += 1;
+    const result = calls === 1 ? old : fresh;
+    return new Promise((resolve) => gates.push(() => resolve(result)));
+  };
+  const handle = await bootIn(h, { config: configuredConfig(), api });
+  // Boot's own fetch is in flight, and it will return the PRE-write sheet.
+  const afterWrite = handle.refresh({ fresh: true });
+  assert.equal(calls, 1, 'no second request until the first has settled');
+
+  gates[0]();
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(calls, 2, 'a second fetch was made to pick up the write');
+  gates[1]();
+  const state = await afterWrite;
+  assert.equal(state.pockets[0].balance, 300, 'the caller gets the post-write state');
+  assert.match(h.byId.get('pockets').innerHTML, /R300\.00/);
+  handle.teardown();
+});
+
+test('plain refreshes still coalesce into one request', async () => {
+  const h = makeHarness();
+  const api = fakeApi();
+  let calls = 0;
+  const gates = [];
+  api.getState = () => { calls += 1; return new Promise((resolve) => gates.push(() => resolve(STATE))); };
+  const handle = await bootIn(h, { config: configuredConfig(), api });
+  const a = handle.refresh();
+  const b = handle.refresh();
+  gates[0]();
+  await Promise.all([a, b]);
+  assert.equal(calls, 1);
+  handle.teardown();
+});
+
+/* ------------------------------------ the pocket card's Add expense button -- */
+
+function cardButton(h, pocketId, { disabled = false } = {}) {
+  const btn = makeEl('', 'button');
+  btn.setAttribute('data-action', 'select-pocket');
+  btn.setAttribute('data-pocket-id', pocketId);
+  btn.disabled = disabled;
+  h.byId.get('pockets').appendChild(btn);
+  return btn;
+}
+
+test('"Add expense" on a pocket card opens the add form with that pocket selected', async () => {
+  const h = makeHarness();
+  const handle = await bootIn(h, { config: configuredConfig(), api: fakeApi() });
+  await handle.ready;
+
+  h.byId.get('pockets').dispatch('click', { target: cardButton(h, 'P01') });
+
+  assert.equal(h.byId.get('view-add').hidden, false, 'switched to the add view');
+  assert.equal(h.byId.get('view-home').hidden, true);
+  assert.equal(h.byId.get('add-pocket').value, 'P01');
+  assert.equal(h.byId.get('add-amount').focused, true, 'cursor is in the amount field');
+  handle.teardown();
+});
+
+test('a depleted pocket\'s card button does nothing', async () => {
+  const h = makeHarness();
+  const handle = await bootIn(h, { config: configuredConfig(), api: fakeApi() });
+  await handle.ready;
+  h.byId.get('pockets').dispatch('click', { target: cardButton(h, 'P02', { disabled: true }) });
+  assert.equal(h.byId.get('view-home').hidden, false, 'stays on home');
+  handle.teardown();
+});
+
+test('an insufficient-funds refusal makes the app refetch balances', async () => {
+  const h = makeHarness();
+  const api = fakeApi();
+  api.createTransaction = async () => { throw Object.assign(new Error('Insufficient funds in Groceries. Remaining: R1.00'), { name: 'ApiError', code: 'INSUFFICIENT_FUNDS' }); };
+  const handle = await bootIn(h, { config: configuredConfig(), api });
+  await handle.ready;
+  assert.equal(api.calls.getState, 1);
+
+  h.byId.get('add-amount').value = '500';
+  h.byId.get('add-pocket').value = 'P01';
+  await h.byId.get('add-form').dispatch('submit');
+  await handle.pending();
+
+  assert.equal(api.calls.getState, 2, 'balances reloaded after the refusal');
   handle.teardown();
 });

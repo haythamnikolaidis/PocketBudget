@@ -28,7 +28,7 @@ import { makeApi } from './api.js';
 import { formatMoney } from './format.js';
 import { renderPockets, renderActivity } from './render.js';
 import { mountAddForm, updateAddFormState } from './addform.js';
-import { mountManage } from './manage.js';
+import { mountManage, updateManageState } from './manage.js';
 
 /**
  * Version of this frontend.
@@ -229,8 +229,8 @@ function askWaitingWorker(registration) {
     return;
   }
   const installing = registration.installing;
-  if (installing && typeof installing.addStateListener === 'function') {
-    installing.addStateListener('statechange', () => {
+  if (installing && typeof installing.addEventListener === 'function') {
+    installing.addEventListener('statechange', () => {
       // Only nudge when a controller exists: with no controller this is the very
       // first install, and skipWaiting gains nothing.
       if (installing.state === 'installed' && registration.active
@@ -429,6 +429,7 @@ export function boot(deps = {}) {
   let lastState = null;
   let lastUpdatedAt = null;
   let lastRefreshError = null;
+  let rerunRequested = false;
   let refreshPromise = null;
   let teardownAddForm = null;
   let teardownManage = null;
@@ -536,7 +537,7 @@ export function boot(deps = {}) {
       const balance = Number(summary.totalBalance);
       const limit = Number(summary.totalLimit);
       els.homeSummary.textContent = Number.isFinite(balance) && Number.isFinite(limit) && limit > 0
-        ? `${Math.round((balance / limit) * 1000) / 10}% of ${Math.round(limit)} left`
+        ? `${Math.round((balance / limit) * 1000) / 10}% of ${formatMoney(limit)} left`
         : '';
     }
   }
@@ -552,10 +553,9 @@ export function boot(deps = {}) {
   /**
    * Mount (or re-mount) the add form and the manage screen against new state.
    *
-   * The add form has an update handle (updateAddFormState) precisely so a
-   * refresh does NOT blow away a half-typed expense. mountManage has no such
-   * handle, so its inputs are read out and restored across the remount — the
-   * same promise, kept for a screen nobody asked to lose.
+   * Both screens are mounted ONCE and then handed each new payload through an
+   * update handle (updateAddFormState / updateManageState), so a refresh never
+   * blows away a half-typed expense or the pocket being edited.
    */
   function mountChildScreens(state) {
     if (torn) return;
@@ -567,7 +567,8 @@ export function boot(deps = {}) {
           state,
           doc,
           toast: (message, kind) => toast(message, kind),
-          onAdded: () => { track(refresh()); },
+          onAdded: () => { track(refresh({ fresh: true })); },
+          onStale: () => { track(refresh()); },
           onError: (err) => { toast(describeError(err), 'error'); },
         });
       } else {
@@ -579,49 +580,30 @@ export function boot(deps = {}) {
     }
 
     try {
-      // Preserve whatever is currently typed into the manage form.
-      const typed = ['manage-name', 'manage-account', 'manage-limit']
-        .map((id) => {
-          const el = byId(id);
-          return el && el.value ? String(el.value) : '';
+      if (!teardownManage) {
+        teardownManage = mountManage({
+          root: views.manage,
+          api,
+          state,
+          onChanged: () => { track(refresh({ fresh: true })); },
+          toast: (message) => { toast(message, 'success'); },
         });
-
-      if (teardownManage && typeof teardownManage === 'function') teardownManage();
-      teardownManage = mountManage({
-        root: views.manage,
-        api,
-        state,
-        onChanged: () => { track(refresh()); },
-        toast: (message) => { toast(message, 'success'); },
-      });
-
-      typed.forEach((value, i) => {
-        const id = ['manage-name', 'manage-account', 'manage-limit'][i];
-        const el = byId(id);
-        if (el && value) el.value = value;
-      });
+      } else {
+        updateManageState(teardownManage, state);
+      }
     } catch (err) {
       console.warn('[app] manage screen failed to mount:', err);
     }
   }
 
-  /**
-   * Fetch state once and paint it.
-   *
-   * Concurrent callers share the in-flight promise. Two triggers firing at once
-   * (a mutation finishing as the app is foregrounded) would otherwise spend two
-   * cold starts to learn the same thing.
-   */
-  function refresh() {
-    if (torn) return Promise.resolve(lastState);
-    if (refreshPromise) return refreshPromise;
-
+  /** One fetch + paint. Never rejects; returns the state now on screen. */
+  function fetchAndPaint() {
     // The api client is called inside Promise.resolve() so that even a client
     // which throws SYNCHRONOUSLY lands on the microtask queue. Without this the
-    // catch/finally below would run before `refreshPromise =` was ever assigned,
-    // leaving the field permanently holding a resolved promise and every later
-    // refresh silently short-circuiting to stale data.
-    const run = Promise.resolve()
+    // catch/finally in refresh() would run before `refreshPromise =` was ever
+    // assigned, leaving the field permanently holding a resolved promise and
+    // every later refresh silently short-circuiting to stale data.
+    return Promise.resolve()
       .then(() => api.getState())
       .then((state) => {
         if (torn) return lastState;
@@ -649,6 +631,33 @@ export function boot(deps = {}) {
         }
         return lastState;
       });
+  }
+
+  /**
+   * Fetch state once and paint it.
+   *
+   * Concurrent callers share the in-flight promise. Two triggers firing at once
+   * (a mutation finishing as the app is foregrounded) would otherwise spend two
+   * cold starts to learn the same thing.
+   *
+   * EXCEPT after a write: pass `{ fresh: true }`. A fetch that was already in
+   * flight when the write landed may have read the sheet BEFORE it, so joining it
+   * would paint pre-write balances as if they were current. A fresh request waits
+   * for that fetch, then fetches once more, and every waiting caller gets the
+   * newer result.
+   */
+  function refresh(opts = {}) {
+    if (torn) return Promise.resolve(lastState);
+    if (refreshPromise) {
+      if (opts.fresh) rerunRequested = true;
+      return refreshPromise;
+    }
+
+    const run = fetchAndPaint().then((state) => {
+      if (!rerunRequested || torn) return state;
+      rerunRequested = false;
+      return fetchAndPaint();
+    });
 
     refreshPromise = run;
     // Clear only OUR own promise: a refresh started while this one settles must
@@ -919,12 +928,35 @@ on(els.setupCancel, 'click', () => {
     if (!confirmDelete(String(txnId))) return;
     track(Promise.resolve()
       .then(() => api.deleteTransaction(String(txnId)))
-      .then(() => { toast('Deleted.', 'success'); return refresh(); })
+      .then((res) => {
+        // An expense from an earlier month is removed from the history, but its
+        // money is not given back to this month's balance.
+        toast(res && res.refunded === false
+          ? 'Deleted. It was from an earlier month, so the balance is unchanged.'
+          : 'Deleted.', 'success');
+        return refresh({ fresh: true });
+      })
       .catch((err) => {
         // Nothing changed, so nothing is refetched: the feed still shows the
         // truth. Reporting the failure is the honest move.
         toast(describeError(err), 'error');
       }));
+  });
+
+  // "Add expense" on a pocket card: jump to the add form with that pocket chosen.
+  // (The button was rendered but nothing listened to it.)
+  on(els.pockets, 'click', (ev) => {
+    const btn = ev && ev.target && typeof ev.target.closest === 'function'
+      ? ev.target.closest('[data-action="select-pocket"]')
+      : null;
+    if (!btn || btn.disabled) return;
+    const dataset = btn.dataset || {};
+    const id = dataset.pocketId || (btn.getAttribute && btn.getAttribute('data-pocket-id'));
+    if (!id) return;
+    switchView(views, tabs, 'add');
+    if (typeof teardownAddForm === 'function' && typeof teardownAddForm.selectPocket === 'function') {
+      teardownAddForm.selectPocket(String(id));
+    }
   });
 
   // The stale banner doubles as the retry affordance: it is the only element on
@@ -988,7 +1020,7 @@ on(els.setupCancel, 'click', () => {
 
   return {
     ready,
-    refresh: () => track(refresh()),
+    refresh: (opts) => track(refresh(opts)),
     pending,
     teardown,
     getState: () => lastState,

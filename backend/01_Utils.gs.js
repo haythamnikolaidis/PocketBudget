@@ -1,16 +1,57 @@
 // CANONICAL SOURCE. Pure functions only — no SpreadsheetApp, no Date text parsing.
 
-import { USERS, SERVER_VERSION, MAX_AMOUNT_CENTS } from './00_Config.gs.js';
+import { USERS, SERVER_VERSION, MAX_AMOUNT_CENTS, CURRENCY_SYMBOL } from './00_Config.gs.js';
 
 /* ------------------------------------------------------------------ money -- */
 
-/** Parse a dollar-ish value into integer cents. Rejects anything non-numeric. */
+/**
+ * Reduce a typed amount to plain digits and an optional decimal point.
+ *
+ *   'R1 234,56'  -> '1234.56'   a leading R (or $) and space thousands are dropped
+ *   '1,234.56'   -> '1234.56'   a comma is a thousands separator...
+ *   '12,50'      -> '12.50'     ...unless exactly 1-2 digits follow it: then it is the
+ *                               decimal comma that South African phone keypads type.
+ *
+ * The last rule matters: with commas simply deleted, '12,50' became 1250 — a
+ * hundredfold overspend that still passes the balance check if the pocket is big enough.
+ */
+export function normaliseAmountText(input) {
+  const s = String(input ?? '').replace(/^\s*[Rr$]\s*/, '').replace(/[\s\u00a0\u202f]/g, '');
+  if (/^\d+,\d{1,2}$/.test(s)) return s.replace(',', '.');
+  return s.replace(/,/g, '');
+}
+
+/**
+ * A normalised amount is plain decimal digits: 12, 12.5, 12., .5 (and -12, so a
+ * negative gets its own message). `Number()` alone also accepts 1e3, 0x10, 0b1,
+ * Infinity and +5 — each a way to type a different amount from the one you meant.
+ */
+const DECIMAL = /^-?(\d+\.?\d*|\.\d+)$/;
+
+/** Parse a rand-ish value into integer cents. Rejects anything non-numeric. */
 export function toCents(v) {
   if (typeof v === 'boolean') throw new Error('Not a number: ' + v);
-  const cleaned = String(v ?? '').replace(/[$,\s]/g, '');
-  const n = cleaned === '' ? NaN : Number(cleaned);
+  const cleaned = normaliseAmountText(v);
+  const n = DECIMAL.test(cleaned) ? Number(cleaned) : NaN;
   if (!Number.isFinite(n)) throw new Error('Not a number: ' + v);
   return Math.round(n * 100);
+}
+
+/**
+ * The balance a pocket should hold after its monthly limit changes.
+ *
+ * The balance moves by the SAME amount as the limit, because what has been spent
+ * this month stays spent: limit 800, balance 500 (R300 spent), new limit 1,000
+ * -> balance 700. Raising the limit of a depleted pocket therefore gives it money
+ * (the old rule only clamped, so it gave nothing and the UI's own advice to
+ * "raise its limit" did not work). Lowering is symmetric, so raising and then
+ * lowering a limit cannot create money. Never below 0, never above the new limit.
+ */
+export function balanceAfterLimitChange(balance, oldLimit, newLimit) {
+  const bal = Math.round(Number(balance) * 100);
+  const oldC = Math.round(Number(oldLimit) * 100);
+  const newC = Math.round(Number(newLimit) * 100);
+  return Math.max(0, Math.min(newC, bal + (newC - oldC))) / 100;
 }
 
 export function toDollars(cents) {
@@ -19,36 +60,49 @@ export function toDollars(cents) {
 
 /**
  * Parse a user-entered amount into integer cents.
- * Rejects: negatives, junk, more than 2 decimal places, and amounts over $1,000,000.
+ * Rejects: negatives, junk, more than 2 decimal places, and amounts over R1,000,000.
  */
 export function parseAmountInput(input) {
   if (typeof input === 'boolean') throw new Error('Not a number: ' + input);
-  const cleaned = String(input ?? '').replace(/[$,\s]/g, '');
-  if (cleaned === '') throw new Error('Not a number: ' + input);
+  const cleaned = normaliseAmountText(input);
+  if (!DECIMAL.test(cleaned)) throw new Error('Not a number: ' + input);
 
   const n = Number(cleaned);
   if (!Number.isFinite(n)) throw new Error('Not a number: ' + input);
   if (n < 0) throw new Error('Amount must be positive.');
   if (Math.abs(n * 100 - Math.round(n * 100)) > 1e-9) throw new Error('Amount has more than 2 decimal places (must be whole cents).');
-  if (Math.round(n * 100) > MAX_AMOUNT_CENTS) throw new Error('Amount is too large (max $1,000,000).');
+  if (Math.round(n * 100) > MAX_AMOUNT_CENTS) throw new Error('Amount is too large (max ' + CURRENCY_SYMBOL + '1,000,000).');
 
   return Math.round(n * 100);
 }
 
-/** Format integer cents as `$1,234.56`. */
+/** Format integer cents as `R1,234.56`. */
 export function money(cents) {
   const neg = cents < 0;
   const abs = Math.abs(cents);
   const dollars = Math.floor(abs / 100);
   const centsPart = String(abs % 100).padStart(2, '0');
   const withCommas = String(dollars).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return (neg ? '-$' : '$') + withCommas + '.' + centsPart;
+  return (neg ? '-' : '') + CURRENCY_SYMBOL + withCommas + '.' + centsPart;
+}
+
+/* ----------------------------------------------------------- sheet text -- */
+
+/**
+ * Make user text safe to write into a cell. Sheets treats a value that starts with
+ * = + - or @ as a FORMULA (=IMPORTDATA(...), =HYPERLINK(...)), so a pocket name or
+ * note could run code against the household's sheet. A leading apostrophe makes
+ * the cell plain text; Sheets does not display it.
+ */
+export function escapeCell(value) {
+  const s = String(value ?? '');
+  return /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
 }
 
 /* ------------------------------------------------------------ validation -- */
 
-export function isValidUser(name) {
-  return typeof name === 'string' && USERS.includes(name);
+export function isValidUser(name, users = USERS) {
+  return typeof name === 'string' && users.includes(name);
 }
 
 /** Pocket IDs are `P` + at least two digits, uppercase. */
@@ -70,23 +124,33 @@ export function isValidRequestId(id) {
 
 /* -------------------------------------------------------------------- ids -- */
 
-/** Next free pocket ID given the existing IDs, e.g. ['P01','P09'] -> 'P10'. */
-export function nextPocketId(existingIds) {
+/**
+ * Next pocket ID given the existing IDs, e.g. ['P01','P09'] -> 'P10'.
+ * `lastIssued` is the highest number ever handed out (kept in Script Properties):
+ * without it, deleting the newest row freed its ID, and the next pocket reused an
+ * ID that old transactions still point at.
+ */
+export function nextPocketId(existingIds, lastIssued = 0) {
   const max = existingIds.reduce((m, id) => {
     if (!isValidPocketId(id)) return m;
     const n = parseInt(String(id).slice(1), 10);
     return Number.isFinite(n) && n > m ? n : m;
-  }, 0);
+  }, Math.max(0, Number(lastIssued) || 0));
   return 'P' + String(max + 1).padStart(2, '0');
 }
 
-/** Next free transaction ID, e.g. ['T1001'] -> 'T1002'. Malformed ids are ignored. */
-export function nextTransactionId(existingIds) {
+/**
+ * Next transaction ID, e.g. ['T1001'] -> 'T1002'. Malformed ids are ignored.
+ * `lastIssued` is the highest number ever handed out; see nextPocketId. A reused
+ * transaction ID let a stale phone's "delete T1005" remove a different, newer
+ * expense that had been given T1005 after the original was deleted.
+ */
+export function nextTransactionId(existingIds, lastIssued = 0) {
   const max = existingIds.reduce((m, id) => {
     if (!isValidTransactionId(id)) return m;
     const n = parseInt(String(id).slice(1), 10);
     return Number.isFinite(n) && n > m ? n : m;
-  }, 0);
+  }, Math.max(0, Number(lastIssued) || 0));
   // The brief's examples start at T1001, so the sequence starts there and pads to 4 digits.
   const start = 1000;
   return 'T' + String(Math.max(max + 1, start + 1)).padStart(4, '0');

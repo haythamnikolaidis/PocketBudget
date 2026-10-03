@@ -5,10 +5,14 @@
   "type": "module",
   "description": "Mobile-first PWA for couples to share monthly pocket budgets.",
   "scripts": {
+    "dev": "node backend/serve.mjs",
     "build": "node backend/build.mjs",
+    "build:css": "npx --yes tailwindcss@3.4.19 -c tailwind/tailwind.config.cjs -i tailwind/input.css -o app/tailwind.css --minify",
     "test": "node --test",
     "test:watch": "node --test --watch",
     "check": "npm run build && npm test"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }

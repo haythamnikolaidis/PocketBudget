@@ -92,20 +92,27 @@ test('updatePocketRow renames without disturbing the balance', () => {
   restore();
 });
 
-test('updatePocketRow clamps the balance when the limit drops below it', () => {
+test('updatePocketRow lowers the balance by the same amount as the limit, never below zero', () => {
   const { restore } = withWorkbook();
-  // P01 has balance 340.5; lowering the limit to 100 must clamp to 100, never negative.
-  const p = updatePocketRow('P01', { limit: 100 });
-  assert.equal(p.limit, 100);
-  assert.equal(p.balance, 100);
+  // P01: limit 800, balance 340.50 (R459.50 spent). A limit of 600 keeps that spend: 140.50.
+  assert.equal(updatePocketRow('P01', { limit: 600 }).balance, 140.5);
+  // Lowering past what is left floors at zero rather than going negative.
+  assert.equal(updatePocketRow('P01', { limit: 100 }).balance, 0);
   restore();
 });
 
-test('updatePocketRow leaves a balance below a raised limit alone', () => {
+test('updatePocketRow raises the balance by the same amount as the limit (it used to stay put)', () => {
   const { restore } = withWorkbook();
   const p = updatePocketRow('P01', { limit: 1000 });
   assert.equal(p.limit, 1000);
-  assert.equal(p.balance, 340.5);   // must NOT jump up to the new limit
+  assert.equal(p.balance, 540.5, 'R200 more limit is R200 more to spend');
+  restore();
+});
+
+test('raising then lowering a limit cannot create money', () => {
+  const { restore } = withWorkbook();
+  updatePocketRow('P01', { limit: 1000 });
+  assert.equal(updatePocketRow('P01', { limit: 800 }).balance, 340.5);
   restore();
 });
 

@@ -8,11 +8,11 @@
 //      after the writes made under it have been flushed to the sheet.
 //   4. No handler throws to the client; failures come back as { ok:false, error }.
 
-import { ACTIONS, USERS, SHEETS, LOCK_TIMEOUT_MS } from './00_Config.gs.js';
+import { ACTIONS, SHEETS, LOCK_TIMEOUT_MS, MAX_NAME_LENGTH } from './00_Config.gs.js';
 import {
   toDollars, parseAmountInput, isValidUser, isValidRequestId, money, ok, fail,
 } from './01_Utils.gs.js';
-import { verifyToken } from './02_Auth.gs.js';
+import { verifyToken, getUsers } from './02_Auth.gs.js';
 import {
   readPockets, readTransactions, findPocketRow, writeBalance,
   appendTransaction, appendPocket, updatePocketRow, archivePocketRow,
@@ -35,6 +35,19 @@ function unlock(lock) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * Validate a pocket name / account. Returns an error envelope, or null when fine.
+ * `required` is true for a name (never blank), false for an optional account.
+ */
+function checkText(value, label, required) {
+  const text = String(value).trim();
+  if (required && !text) return fail('INVALID_NAME', label + ' is required.');
+  if (text.length > MAX_NAME_LENGTH) {
+    return fail('INVALID_NAME', label + ' must be ' + MAX_NAME_LENGTH + ' characters or fewer.');
+  }
+  return null;
 }
 
 /** Shape a stored pocket row into the API's pocket object. */
@@ -69,12 +82,20 @@ export function getState(params) {
   if (!verifyToken(params.token)) return fail('UNAUTHORIZED', 'Invalid or missing token.');
 
   const month = params.month || monthKey(new Date());
-  const pockets = readPockets();
-  const transactions = readTransactions({ limit: 10 });
+  const everyPocket = readPockets({ includeArchived: true });
+  const pockets = everyPocket.filter((p) => p.status !== 'Archived');
+  const archivedPockets = everyPocket
+    .filter((p) => p.status === 'Archived')
+    .map((p) => ({ id: p.id, name: p.name, account: p.account, limit: r2(p.limit) }));
+  // One read of the Transactions sheet, not two: it is sorted newest-first, so the
+  // feed is just its head. (This used to read and sort the whole sheet twice per
+  // refresh, on a sheet that only grows.)
+  const everyTransaction = readTransactions();
+  const transactions = everyTransaction.slice(0, 10);
 
   const spentByPocket = {};
-  for (const t of readTransactions()) {
-    if (!t.timestamp || !t.timestamp.startsWith(month)) continue;
+  for (const t of everyTransaction) {
+    if (!t.timestamp || monthKey(new Date(t.timestamp)) !== month) continue;
     spentByPocket[t.pocketId] = (spentByPocket[t.pocketId] || 0) + t.amount;
   }
 
@@ -85,12 +106,13 @@ export function getState(params) {
     serverTime: new Date().toISOString(),
     month,
     pockets: present,
+    archivedPockets,
     transactions,
     summary: {
       totalLimit: sum('limit'),
       totalBalance: sum('balance'),
       totalSpent: sum('spent'),
-      users: [...USERS],
+      users: getUsers(),
     },
   });
 }
@@ -99,7 +121,8 @@ export function createPocket(params) {
   if (!verifyToken(params.token)) return fail('UNAUTHORIZED', 'Invalid or missing token.');
 
   const name = String(params.name ?? '').trim();
-  if (!name) return fail('INVALID_NAME', 'Pocket name is required.');
+  const nameProblem = checkText(name, 'Pocket name', true) || checkText(params.account ?? '', 'Bank account', false);
+  if (nameProblem) return nameProblem;
 
   let limitCents;
   try {
@@ -127,13 +150,27 @@ export function updatePocket(params) {
   const pocketId = String(params.pocketId ?? '');
   if (!findPocketRow(pocketId)) return fail('POCKET_NOT_FOUND', 'Pocket not found: ' + pocketId);
 
+  // The client checks these too, but the server is the one that must hold: a blank
+  // name or a zero limit (which locks the pocket) must not be savable by any caller.
+  if (params.name != null) {
+    const problem = checkText(params.name, 'Pocket name', true);
+    if (problem) return problem;
+  }
+  if (params.account != null) {
+    const problem = checkText(params.account, 'Bank account', false);
+    if (problem) return problem;
+  }
+
   let limit;
   if (params.limit != null) {
+    let limitCents;
     try {
-      limit = toDollars(parseAmountInput(params.limit));
+      limitCents = parseAmountInput(params.limit);
     } catch (err) {
       return fail('INVALID_AMOUNT', err.message);
     }
+    if (limitCents === 0) return fail('INVALID_AMOUNT', 'Monthly limit must be greater than zero.');
+    limit = toDollars(limitCents);
   }
 
   const patch = {};
@@ -148,8 +185,24 @@ export function updatePocket(params) {
     return fail('BUSY', 'Another update is in progress. Please try again.');
   }
   try {
-    const pocket = updatePocketRow(pocketId, patch);
+    const before = readPockets({ includeArchived: true }).find((p) => p.id === pocketId);
+    const reopening = params.unarchive === true && Boolean(before) && before.status === 'Archived';
+
+    let pocket = updatePocketRow(pocketId, patch);
     if (!pocket) return fail('POCKET_NOT_FOUND', 'Pocket not found: ' + pocketId);
+
+    if (reopening) {
+      // An archived pocket is skipped by every rollover, so its stored balance is
+      // whatever it was on the day it was archived. Give it what this month's
+      // spending actually leaves.
+      const month = monthKey(new Date());
+      const spent = readTransactions()
+        .filter((t) => t.pocketId === pocketId && t.timestamp && monthKey(new Date(t.timestamp)) === month)
+        .reduce((sum, t) => sum + t.amount, 0);
+      const balance = r2(Math.max(0, pocket.limit - spent));
+      writeBalance(pocketId, balance);
+      pocket = { ...pocket, balance };
+    }
     return ok({ pocket: presentPocket(pocket) });
   } finally {
     unlock(lock);
@@ -178,7 +231,7 @@ export function createTransaction(params) {
   if (!verifyToken(params.token)) return fail('UNAUTHORIZED', 'Invalid or missing token.');
 
   const user = String(params.user ?? '');
-  if (!isValidUser(user)) return fail('INVALID_USER', 'Unknown user: ' + user);
+  if (!isValidUser(user, getUsers())) return fail('INVALID_USER', 'Unknown user: ' + user);
 
   const pocketId = String(params.pocketId ?? '');
   const note = String(params.note ?? '').trim().slice(0, 120);
@@ -216,12 +269,11 @@ export function createTransaction(params) {
       });
     }
 
-    const row = findPocketRow(pocketId);
-    if (!row) return fail('POCKET_NOT_FOUND', 'Pocket not found: ' + pocketId);
-
-    // Re-read under the lock: authoritative, not client-supplied.
+    // Re-read under the lock: authoritative, not client-supplied. (One read; a
+    // separate findPocketRow beforehand was a second round trip for nothing.)
     const pocket = readPockets({ includeArchived: true }).find((p) => p.id === pocketId);
-    if (!pocket || pocket.status !== 'Active') {
+    if (!pocket) return fail('POCKET_NOT_FOUND', 'Pocket not found: ' + pocketId);
+    if (pocket.status !== 'Active') {
       return fail('POCKET_NOT_FOUND', 'Pocket is not available: ' + pocketId);
     }
 
@@ -292,7 +344,12 @@ export function deleteTransaction(params) {
     // Declared out here on purpose: the original plan scoped this `const` inside the
     // `if` block below and then read it after the block, which throws ReferenceError.
     let refunded = null;
-    if (pocket) {
+    // Only this month's spending is given back. This month's budget never paid for
+    // an earlier month's expense, so refunding it would hand out money the pocket
+    // does not owe (and the rollover has already reset last month's balance).
+    const inCurrentMonth = Boolean(record.timestamp)
+      && monthKey(new Date(record.timestamp)) === monthKey(new Date());
+    if (pocket && inCurrentMonth) {
       refunded = r2(Math.min(pocket.limit, pocket.balance + record.amount));
       writeBalance(record.pocketId, refunded);
       try {
@@ -311,7 +368,8 @@ export function deleteTransaction(params) {
 
     return ok({
       deleted: { id: record.id, pocketId: record.pocketId, amount: record.amount },
-      pocket: pocket ? presentPocket({ ...pocket, balance: refunded }) : null,
+      refunded: refunded !== null,
+      pocket: pocket ? presentPocket({ ...pocket, balance: refunded !== null ? refunded : pocket.balance }) : null,
     });
   } finally {
     unlock(lock);
