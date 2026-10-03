@@ -62,6 +62,19 @@ export function money(cents) {
   return (neg ? '-' : '') + CURRENCY_SYMBOL + withCommas + '.' + centsPart;
 }
 
+/* ----------------------------------------------------------- sheet text -- */
+
+/**
+ * Make user text safe to write into a cell. Sheets treats a value that starts with
+ * = + - or @ as a FORMULA (=IMPORTDATA(...), =HYPERLINK(...)), so a pocket name or
+ * note could run code against the household's sheet. A leading apostrophe makes
+ * the cell plain text; Sheets does not display it.
+ */
+export function escapeCell(value) {
+  const s = String(value ?? '');
+  return /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
+}
+
 /* ------------------------------------------------------------ validation -- */
 
 export function isValidUser(name) {

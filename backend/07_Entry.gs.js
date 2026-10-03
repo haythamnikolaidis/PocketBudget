@@ -117,11 +117,31 @@ export function dailyRollover() {
     }
   }
 
+  refreshReport(now);
+}
+
+/** Rebuild the Monthly_Report tab from the live sheets. Also on the PocketBudget menu. */
+export function refreshReport(now = new Date()) {
   renderReport(getReportSheet(), {
     pockets: readPockets(),
     transactions: readTransactions(),
     now,
   });
+}
+
+/**
+ * Simple trigger: adds a PocketBudget menu to the sheet so the report can be
+ * refreshed on demand instead of waiting for the nightly run.
+ */
+function onOpen() {
+  try {
+    SpreadsheetApp.getUi()
+      .createMenu('PocketBudget')
+      .addItem('Refresh report', 'refreshReport')
+      .addToUi();
+  } catch (_) {
+    // No UI (a trigger or API run): nothing to add a menu to.
+  }
 }
 
 /**
