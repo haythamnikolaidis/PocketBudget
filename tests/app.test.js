@@ -676,6 +676,30 @@ test('registerServiceWorker asks a waiting worker to skip waiting but never relo
   assert.deepEqual(posted[0], { type: 'SKIP_WAITING' });
 });
 
+test('an installing worker is nudged once it has installed (statechange is a real DOM event)', async () => {
+  const win = makeWindow({ protocol: 'https:', hostname: 'pocketbudget.example' });
+  const posted = [];
+  const listeners = [];
+  const installing = {
+    state: 'installing',
+    postMessage: (msg) => posted.push(msg),
+    // The real API is addEventListener. The code used a method that does not exist
+    // (addStateListener), so this branch could never run in a browser.
+    addEventListener: (type, fn) => listeners.push([type, fn]),
+  };
+  const registration = { waiting: null, installing, active: { state: 'activated' } };
+  win.navigator.serviceWorker.register = () => Promise.resolve(registration);
+
+  await registerServiceWorker(win);
+  assert.equal(listeners.length, 1);
+  assert.equal(listeners[0][0], 'statechange');
+  assert.equal(posted.length, 0, 'not before it has installed');
+
+  installing.state = 'installed';
+  listeners[0][1]();
+  assert.deepEqual(posted, [{ type: 'SKIP_WAITING' }]);
+});
+
 test('registerServiceWorker does not blow up when the promise rejects', async () => {
   const win = makeWindow({ protocol: 'https:', hostname: 'pocketbudget.example' });
   win.navigator.serviceWorker.register = () => Promise.reject(new Error('SecurityError'));

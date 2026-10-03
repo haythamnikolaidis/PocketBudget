@@ -229,8 +229,8 @@ function askWaitingWorker(registration) {
     return;
   }
   const installing = registration.installing;
-  if (installing && typeof installing.addStateListener === 'function') {
-    installing.addStateListener('statechange', () => {
+  if (installing && typeof installing.addEventListener === 'function') {
+    installing.addEventListener('statechange', () => {
       // Only nudge when a controller exists: with no controller this is the very
       // first install, and skipWaiting gains nothing.
       if (installing.state === 'installed' && registration.active
