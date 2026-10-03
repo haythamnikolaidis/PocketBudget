@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   toCents, toDollars, parseAmountInput, isValidUser, isValidPocketId,
-  nextPocketId, nextTransactionId, ok, fail, money, normaliseAmountText,
+  nextPocketId, nextTransactionId, ok, fail, money, normaliseAmountText, balanceAfterLimitChange,
 } from '../backend/01_Utils.gs.js';
 import { USERS } from '../backend/00_Config.gs.js';
 
@@ -129,4 +129,14 @@ test('money() and the too-large message use rand, never dollars', () => {
   assert.equal(money(123456), 'R1,234.56');
   assert.equal(money(-500), '-R5.00');
   assert.throws(() => parseAmountInput('1000000.01'), /max R1,000,000/);
+});
+
+
+test('balanceAfterLimitChange: the balance moves with the limit, within 0..newLimit', () => {
+  assert.equal(balanceAfterLimitChange(500, 800, 1000), 700);
+  assert.equal(balanceAfterLimitChange(500, 800, 600), 300);
+  assert.equal(balanceAfterLimitChange(100, 800, 600), 0, 'floors at zero');
+  assert.equal(balanceAfterLimitChange(0, 800, 1000), 200, 'a depleted pocket gets the extra');
+  assert.equal(balanceAfterLimitChange(800, 800, 1000), 1000, 'an untouched pocket tracks its limit');
+  assert.equal(balanceAfterLimitChange(0.1, 0.3, 0.6), 0.4, 'no float drift');
 });

@@ -30,6 +30,23 @@ export function toCents(v) {
   return Math.round(n * 100);
 }
 
+/**
+ * The balance a pocket should hold after its monthly limit changes.
+ *
+ * The balance moves by the SAME amount as the limit, because what has been spent
+ * this month stays spent: limit 800, balance 500 (R300 spent), new limit 1,000
+ * -> balance 700. Raising the limit of a depleted pocket therefore gives it money
+ * (the old rule only clamped, so it gave nothing and the UI's own advice to
+ * "raise its limit" did not work). Lowering is symmetric, so raising and then
+ * lowering a limit cannot create money. Never below 0, never above the new limit.
+ */
+export function balanceAfterLimitChange(balance, oldLimit, newLimit) {
+  const bal = Math.round(Number(balance) * 100);
+  const oldC = Math.round(Number(oldLimit) * 100);
+  const newC = Math.round(Number(newLimit) * 100);
+  return Math.max(0, Math.min(newC, bal + (newC - oldC))) / 100;
+}
+
 export function toDollars(cents) {
   return Math.round(cents) / 100;
 }

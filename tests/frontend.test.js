@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeConfig, resolveEndpoint } from '../app/js/config.js';
-import { formatMoney, formatPct, isValidAmount, relativeDay, parseAmountText, normaliseAmountText } from '../app/js/format.js';
+import { formatMoney, formatPct, isValidAmount, relativeDay, parseAmountText, normaliseAmountText, balanceAfterLimitChange } from '../app/js/format.js';
 
 test('makeConfig stores the endpoint and token', () => {
   const cfg = makeConfig();
@@ -89,4 +89,12 @@ test('the client and server amount normalisers agree on every input', async () =
   const inputs = ['R12,50', 'R1 234,56', '1 234,5', '1,234', '1,234.56', '12,345', '12.5', ' r 7 ', '$9',
     '', 'R', '1,2,3', '1.234,56', '0,5', '1234,567', '12,50\u00a0', 'abc', '1R2'];
   for (const s of inputs) assert.equal(normaliseAmountText(s), server(s), JSON.stringify(s));
+});
+
+
+test('the client preview of a limit change matches the server rule exactly', async () => {
+  const { balanceAfterLimitChange: server } = await import('../backend/01_Utils.gs.js');
+  for (const [b, o, n] of [[500, 800, 1000], [500, 800, 600], [100, 800, 50], [0, 120, 300], [340.5, 800, 800], [0.1, 0.3, 0.6]]) {
+    assert.equal(balanceAfterLimitChange(b, o, n), server(b, o, n), `${b} ${o} ${n}`);
+  }
 });

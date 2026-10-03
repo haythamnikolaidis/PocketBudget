@@ -273,3 +273,15 @@ test('ROLLOVER: running again in the same month does not reset spending', () => 
   assert.equal(s.balance(), 700);
   s.restore();
 });
+
+/* ------------------------------------------------- limit changes (item 9) -- */
+
+test('LIMITS: raising the limit of a depleted pocket gives it money, so it can be spent again', () => {
+  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 100, 0, 'Active']] });
+  assert.equal(spend({ amount: 5 }).error, 'INSUFFICIENT_FUNDS');
+  const r = updatePocket({ token: TOKEN, pocketId: 'P01', limit: 150 });
+  assert.equal(r.pocket.balance, 50);
+  assert.equal(r.pocket.isLocked, false);
+  assert.equal(spend({ amount: 5, requestId: 'req-0002-bbbb' }).ok, true);
+  s.restore();
+});

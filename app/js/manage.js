@@ -22,7 +22,7 @@
 //      home feed, so an edit that appeared to succeed would be a change nobody
 //      can see.
 
-import { formatMoney, isValidAmount, parseAmountText } from './format.js';
+import { formatMoney, isValidAmount, parseAmountText, balanceAfterLimitChange } from './format.js';
 import { esc } from './render.js';
 
 /* ------------------------------------------------------------- helpers -- */
@@ -107,15 +107,25 @@ function rowHtml(p) {
 }
 
 /**
- * The warning for a limit that would pull the balance down, and the same
+ * The warning for a limit change that would pull the balance down, and the same
  * sentence used as the confirm text. Both figures are named explicitly, because
  * "the limit changed" is exactly the kind of message a user reads past and then
  * cannot explain a missing balance.
  */
-function clampWarning(newLimit, balance) {
+function clampWarning(newLimit, pocket) {
+  const next = balanceAfterLimitChange(pocket.balance, pocket.limit, newLimit);
   return (
     `Lowering the limit to ${formatMoney(newLimit)} will also reduce the current balance,` +
-    ` currently ${formatMoney(balance)}, to ${formatMoney(newLimit)}.`
+    ` currently ${formatMoney(pocket.balance)}, to ${formatMoney(next)}.`
+  );
+}
+
+/** The gentler note for a raise: the extra limit becomes extra balance. */
+function raiseNote(newLimit, pocket) {
+  const next = balanceAfterLimitChange(pocket.balance, pocket.limit, newLimit);
+  return (
+    `Raising the limit to ${formatMoney(newLimit)} adds ${formatMoney(next - num(pocket.balance))}` +
+    ` to the current balance, making it ${formatMoney(next)}.`
   );
 }
 
@@ -216,7 +226,12 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
    * limit, so a create can never clamp anything.
    */
   const wouldClamp = (limit, pocket) =>
-    Boolean(pocket) && Number.isFinite(limit) && limit < num(pocket.balance);
+    Boolean(pocket) && Number.isFinite(limit)
+    && balanceAfterLimitChange(pocket.balance, pocket.limit, limit) < num(pocket.balance);
+
+  const wouldRaise = (limit, pocket) =>
+    Boolean(pocket) && Number.isFinite(limit)
+    && balanceAfterLimitChange(pocket.balance, pocket.limit, limit) > num(pocket.balance);
 
   /** The pocket currently loaded into the form, or null in create mode. */
   const editingPocket = () => (editingId === null ? null : findPocket(editingId));
@@ -310,7 +325,9 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
     if (!pocket) return;
     const limit = parseAmount(limitInput && limitInput.value);
     if (Number.isFinite(limit) && wouldClamp(limit, pocket)) {
-      say(clampWarning(limit, pocket.balance));
+      say(clampWarning(limit, pocket));
+    } else if (Number.isFinite(limit) && wouldRaise(limit, pocket)) {
+      say(raiseNote(limit, pocket));
     }
   };
 
@@ -342,8 +359,8 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
     }
 
     if (pocket && wouldClamp(limit, pocket) &&
-        !ask(clampWarning(limit, pocket.balance))) {
-      say(clampWarning(limit, pocket.balance));
+        !ask(clampWarning(limit, pocket))) {
+      say(clampWarning(limit, pocket));
       return;
     }
 

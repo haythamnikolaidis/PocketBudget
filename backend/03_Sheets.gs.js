@@ -2,7 +2,7 @@
 // CANONICAL SOURCE. The ONLY module that touches SpreadsheetApp.
 
 import { SHEETS, REQUEST_ID_LOOKBACK_ROWS } from './00_Config.gs.js';
-import { nextPocketId, nextTransactionId, isValidPocketId } from './01_Utils.gs.js';
+import { nextPocketId, nextTransactionId, isValidPocketId, balanceAfterLimitChange } from './01_Utils.gs.js';
 
 /* --------------------------------------------------------------- plumbing -- */
 
@@ -176,10 +176,11 @@ export function updatePocketRow(pocketId, { name, account, limit, status }) {
   if (name != null) sheet.getRange(row, 2).setValue(name);
   if (account != null) sheet.getRange(row, 3).setValue(account);
   if (limit != null) {
-    sheet.getRange(row, 4).setValue(limit);
-    // Keep balance within the new limit; never negative, never above limit.
+    const oldLimit = num(sheet.getRange(row, 4).getValues()[0][0]);
     const cur = num(sheet.getRange(row, 5).getValues()[0][0]);
-    sheet.getRange(row, 5).setValue(Math.min(Math.max(cur, 0), limit));
+    sheet.getRange(row, 4).setValue(limit);
+    // The balance moves with the limit (see balanceAfterLimitChange).
+    sheet.getRange(row, 5).setValue(balanceAfterLimitChange(cur, oldLimit, limit));
   }
   if (status != null) sheet.getRange(row, 6).setValue(status);
   return readPockets({ includeArchived: true }).find((p) => p.id === pocketId) || null;

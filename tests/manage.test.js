@@ -402,6 +402,30 @@ test('raising a limit above the balance needs no clamp warning', async () => {
   }));
 });
 
+test('raising a limit says how much it adds to the balance', async () => {
+  await withFakeDom(() => withConfirm(true, async () => {
+    const m = await mount([POCKET]);   // limit 800, balance 340.50
+    await m.click('edit', 'P01');
+    m.type('limit', '1000');
+    await Promise.all(fire(m.nodes['manage-limit'], 'input', { target: m.nodes['manage-limit'] }));
+    const note = m.nodes['manage-reason'].textContent;
+    assert.match(note, /adds R200\.00/);
+    assert.match(note, /R540\.50/);
+  }));
+});
+
+test('lowering a limit states the balance it will leave, not just the new limit', async () => {
+  await withFakeDom(() => withConfirm(true, async () => {
+    const m = await mount([POCKET]);   // limit 800, balance 340.50
+    await m.click('edit', 'P01');
+    m.type('limit', '600');
+    await Promise.all(fire(m.nodes['manage-limit'], 'input', { target: m.nodes['manage-limit'] }));
+    const warn = m.nodes['manage-reason'].textContent;
+    assert.match(warn, /R340\.50/, 'the balance now');
+    assert.match(warn, /R140\.50/, 'the balance after');
+  }));
+});
+
 test('editing renames and re-limits a pocket, and the second Edit click cancels', async () => {
   await withFakeDom(() => withConfirm(true, async () => {
     const m = await mount([POCKET]);
