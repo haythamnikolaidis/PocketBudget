@@ -317,3 +317,48 @@ test('DELETE: removing this month\'s expense still refunds it', () => {
   assert.equal(s.balance(), 400);
   s.restore();
 });
+
+/* ----------------------------------------------------- id reuse (item 11) -- */
+
+test('IDS: deleting the newest transaction does not free its id', () => {
+  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 800, 'Active']] });
+  const a = spend({ requestId: 'req-0001-aaaa' });
+  const b = spend({ requestId: 'req-0002-bbbb' });
+  assert.equal(deleteTransaction({ token: TOKEN, txnId: b.transaction.id }).ok, true);
+  const c = spend({ requestId: 'req-0003-cccc' });
+  assert.notEqual(c.transaction.id, b.transaction.id, 'the deleted id is retired, not recycled');
+  assert.ok(Number(c.transaction.id.slice(1)) > Number(b.transaction.id.slice(1)));
+  assert.ok(a.transaction.id < b.transaction.id);
+  s.restore();
+});
+
+test('IDS: a stale phone deleting an id that was already removed cannot hit a newer expense', () => {
+  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 800, 'Active']] });
+  const old = spend({ requestId: 'req-0001-aaaa' });
+  deleteTransaction({ token: TOKEN, txnId: old.transaction.id });          // phone B deletes it
+  const fresh = spend({ requestId: 'req-0002-bbbb' });                      // then logs another
+  const stale = viaDispatcher('deleteTransaction', { txnId: old.transaction.id });   // phone A, still showing the old row
+  assert.equal(stale.ok, false);
+  assert.equal(stale.error, 'TRANSACTION_NOT_FOUND');
+  assert.equal(s.wb.txns._rows.length, 2, 'the newer expense survives');
+  assert.equal(s.wb.txns._rows[1][0], fresh.transaction.id);
+  s.restore();
+});
+
+test('IDS: a deleted pocket row does not hand its id to the next pocket', () => {
+  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 800, 'Active']] });
+  const p2 = createPocket({ token: TOKEN, name: 'Fuel', account: '', limit: 100 });
+  assert.equal(p2.pocket.id, 'P02');
+  s.wb.pockets.deleteRow(3);                      // someone removes the row by hand in the sheet
+  const p3 = createPocket({ token: TOKEN, name: 'Gifts', account: '', limit: 100 });
+  assert.equal(p3.pocket.id, 'P03', 'P02 is retired: old transactions may still point at it');
+  s.restore();
+});
+
+test('IDS: nextTransactionId / nextPocketId honour the highest number ever issued', async () => {
+  const { nextTransactionId, nextPocketId } = await import('../backend/01_Utils.gs.js');
+  assert.equal(nextTransactionId(['T1001'], 1005), 'T1006');
+  assert.equal(nextTransactionId(['T1009'], 1005), 'T1010', 'rows above the counter still win');
+  assert.equal(nextPocketId(['P01'], 4), 'P05');
+  assert.equal(nextPocketId([], 0), 'P01');
+});

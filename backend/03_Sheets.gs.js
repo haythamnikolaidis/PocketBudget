@@ -4,6 +4,14 @@
 import { SHEETS, REQUEST_ID_LOOKBACK_ROWS } from './00_Config.gs.js';
 import { nextPocketId, nextTransactionId, isValidPocketId, balanceAfterLimitChange } from './01_Utils.gs.js';
 
+/** Script Properties holding the highest pocket / transaction number ever issued. */
+const PROP_LAST_POCKET = 'LAST_POCKET_NUM';
+const PROP_LAST_TXN = 'LAST_TXN_NUM';
+
+function lastIssued(key) {
+  return Number(PropertiesService.getScriptProperties().getProperty(key)) || 0;
+}
+
 /* --------------------------------------------------------------- plumbing -- */
 
 function ss() {
@@ -164,7 +172,7 @@ export function writeBalance(pocketId, balance) {
 
 export function appendPocket({ name, account, limit }) {
   const sheet = getPocketSheet();
-  const id = nextPocketIdFromSheet();
+  const id = issueId(nextPocketIdFromSheet(), PROP_LAST_POCKET);
   sheet.appendRow([id, name, account, limit, limit, 'Active']);
   return { id, name, account, limit, balance: limit, status: 'Active' };
 }
@@ -193,7 +201,7 @@ export function archivePocketRow(pocketId) {
 /** Append a transaction. Returns the new transaction ID. */
 export function appendTransaction({ user, pocketId, amount, note, timestamp, requestId }) {
   const sheet = getTransactionSheet();
-  const id = nextTransactionIdFromSheet();
+  const id = issueId(nextTransactionIdFromSheet(), PROP_LAST_TXN);
   sheet.appendRow([id, timestamp || new Date(), user, pocketId, amount, note || '', requestId || '']);
   if (requestId) {
     // Sheets created before idempotency existed have no 7th header.
@@ -221,14 +229,22 @@ export function deleteTransactionRow(txnId) {
   return record;
 }
 
-export function nextPocketIdFromSheet() {
-  const rows = dataRows(getPocketSheet());
-  return nextPocketId(rows.map((r) => String(r[0])));
+/** Record that an ID has been handed out, so it can never be issued again. */
+function issueId(id, propertyKey) {
+  PropertiesService.getScriptProperties().setProperty(propertyKey, String(parseInt(String(id).slice(1), 10)));
+  return id;
 }
 
+/** The ID the next pocket will get: above every row AND every ID ever issued. Does not reserve it. */
+export function nextPocketIdFromSheet() {
+  const rows = dataRows(getPocketSheet());
+  return nextPocketId(rows.map((r) => String(r[0])), lastIssued(PROP_LAST_POCKET));
+}
+
+/** The ID the next transaction will get; see nextPocketIdFromSheet. */
 export function nextTransactionIdFromSheet() {
   const rows = dataRows(getTransactionSheet());
-  return nextTransactionId(rows.map((r) => String(r[0])));
+  return nextTransactionId(rows.map((r) => String(r[0])), lastIssued(PROP_LAST_TXN));
 }
 
 /* -------------------------------------------------------------- bootstrap -- */

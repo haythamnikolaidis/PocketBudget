@@ -117,23 +117,33 @@ export function isValidRequestId(id) {
 
 /* -------------------------------------------------------------------- ids -- */
 
-/** Next free pocket ID given the existing IDs, e.g. ['P01','P09'] -> 'P10'. */
-export function nextPocketId(existingIds) {
+/**
+ * Next pocket ID given the existing IDs, e.g. ['P01','P09'] -> 'P10'.
+ * `lastIssued` is the highest number ever handed out (kept in Script Properties):
+ * without it, deleting the newest row freed its ID, and the next pocket reused an
+ * ID that old transactions still point at.
+ */
+export function nextPocketId(existingIds, lastIssued = 0) {
   const max = existingIds.reduce((m, id) => {
     if (!isValidPocketId(id)) return m;
     const n = parseInt(String(id).slice(1), 10);
     return Number.isFinite(n) && n > m ? n : m;
-  }, 0);
+  }, Math.max(0, Number(lastIssued) || 0));
   return 'P' + String(max + 1).padStart(2, '0');
 }
 
-/** Next free transaction ID, e.g. ['T1001'] -> 'T1002'. Malformed ids are ignored. */
-export function nextTransactionId(existingIds) {
+/**
+ * Next transaction ID, e.g. ['T1001'] -> 'T1002'. Malformed ids are ignored.
+ * `lastIssued` is the highest number ever handed out; see nextPocketId. A reused
+ * transaction ID let a stale phone's "delete T1005" remove a different, newer
+ * expense that had been given T1005 after the original was deleted.
+ */
+export function nextTransactionId(existingIds, lastIssued = 0) {
   const max = existingIds.reduce((m, id) => {
     if (!isValidTransactionId(id)) return m;
     const n = parseInt(String(id).slice(1), 10);
     return Number.isFinite(n) && n > m ? n : m;
-  }, 0);
+  }, Math.max(0, Number(lastIssued) || 0));
   // The brief's examples start at T1001, so the sequence starts there and pads to 4 digits.
   const start = 1000;
   return 'T' + String(Math.max(max + 1, start + 1)).padStart(4, '0');
