@@ -45,6 +45,24 @@ input[type="number"]::-webkit-inner-spin-button {
   color: var(--accent);
 }
 
+/* Toast: dark text on a light card, so it reads against the dark page behind it.
+ * The left edge carries the kind (colour is a hint, never the only signal: the
+ * wording says what happened). Plain CSS rather than Tailwind utilities, so it
+ * still looks right if the CDN stylesheet has not loaded. */
+.pb-toast {
+  background: #f8fafc;
+  color: #0f172a;
+  border-left: 4px solid #64748b;
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.4;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+}
+.pb-toast--success { border-left-color: #059669; }
+.pb-toast--error { border-left-color: #e11d48; }
+
 /* A thin, unobtrusive scrollbar inside feed containers. */
 .scroll-thin::-webkit-scrollbar {
   width: 6px;

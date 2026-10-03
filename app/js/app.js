@@ -47,6 +47,9 @@ const VIEWS = ['home', 'add', 'manage'];
 /** How long a toast stays up before it hides itself again. */
 const TOAST_MS = 3200;
 
+/** Errors stay longer: they are longer, and they are the ones that must be read. */
+const TOAST_ERROR_MS = 7000;
+
 /* ---------------------------------------------------------------- toast -- */
 
 /**
@@ -464,7 +467,7 @@ export function boot(deps = {}) {
       if (clearTimer) clearTimer(t);
     }
     timers.clear();
-    timers.add(setTimer(() => { hideToast(els.toast); timers.clear(); }, TOAST_MS));
+    timers.add(setTimer(() => { hideToast(els.toast); timers.clear(); }, kind === 'error' ? TOAST_ERROR_MS : TOAST_MS));
   };
 
   function on(target, type, fn, options) {

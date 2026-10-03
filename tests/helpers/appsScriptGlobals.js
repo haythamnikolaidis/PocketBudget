@@ -55,6 +55,7 @@ export function installGlobals({
   define('SpreadsheetApp', {
     getActiveSpreadsheet: () => ss,
     openById: () => ss,
+    flush: () => {},
   });
   define('LockService', ls);
   define('PropertiesService', { getScriptProperties: () => props });

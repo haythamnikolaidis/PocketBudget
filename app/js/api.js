@@ -28,6 +28,15 @@ export class ApiError extends Error {
 const SAFE_HEADERS = { 'Content-Type': 'text/plain;charset=utf-8' };
 
 /**
+ * How long one request may take before it is abandoned. Apps Script cold starts
+ * cost seconds and the server may wait up to 20s for its lock, so this is
+ * generous — but a request must not hang forever, or the form never frees up.
+ * A timeout does NOT mean the server did nothing; that is what createTransaction's
+ * requestId is for.
+ */
+export const REQUEST_TIMEOUT_MS = 30000;
+
+/**
  * Build a GET URL with query params.
  * GET is CORS-safelisted, so reads need no preflight and are unaffected by §0.
  */
@@ -68,12 +77,13 @@ function checkStatus(res) {
  * can substitute a double. An earlier draft called the global directly, which
  * made the POST tests hit the real network.
  */
-async function postJson(fetchImpl, endpoint, action, params = {}) {
+async function postJson(fetchImpl, endpoint, action, params = {}, signal) {
   const res = await fetchImpl(endpoint, {
     method: 'POST',
     headers: SAFE_HEADERS,
     redirect: 'follow',
     body: JSON.stringify({ action, ...params }),
+    signal,
   });
   return parseJson(checkStatus(res));
 }
@@ -92,6 +102,9 @@ function unwrap(json) {
  */
 function describe(err) {
   if (err instanceof ApiError) return err;
+  if (err && err.name === 'AbortError') {
+    return new ApiError('TIMEOUT', 'The server took too long to respond.');
+  }
   if (err && err.name === 'TypeError') {
     return new ApiError('NETWORK', 'Could not reach the server. Check your connection and try again.');
   }
@@ -103,6 +116,10 @@ function describe(err) {
  */
 export function makeApi(config, { fetchImpl = fetch } = {}) {
   const call = async (method, action, params = {}) => {
+    // One timer covers the whole exchange, body included.
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => ctl.abort(), REQUEST_TIMEOUT_MS) : null;
+    const signal = ctl ? ctl.signal : undefined;
     try {
       if (!config.isConfigured()) {
         throw new ApiError('NOT_CONFIGURED', 'Set up PocketBudget first.');
@@ -112,14 +129,16 @@ export function makeApi(config, { fetchImpl = fetch } = {}) {
 
       const json = method === 'GET'
         ? await fetchImpl(getUrl(endpoint, action, { ...params, token }),
-                          { method: 'GET', redirect: 'follow' })
+                          { method: 'GET', redirect: 'follow', signal })
             .then(checkStatus)
             .then(parseJson)
-        : await postJson(fetchImpl, endpoint, action, { ...params, token });
+        : await postJson(fetchImpl, endpoint, action, { ...params, token }, signal);
 
       return unwrap(json);
     } catch (err) {
       throw describe(err);
+    } finally {
+      if (timer !== null) clearTimeout(timer);
     }
   };
 

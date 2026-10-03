@@ -46,6 +46,28 @@ function lockedReason(name) {
     + 'Raise its limit or choose another pocket.';
 }
 
+/**
+ * Server answers that prove the expense was NOT recorded. After one of these the
+ * next attempt is a new expense. Anything else (timeout, dropped connection,
+ * unreadable reply, server fault) leaves it unknown, and the retry must reuse
+ * the same requestId so the server can recognise it.
+ */
+const DEFINITIVE_REJECTIONS = new Set([
+  'INSUFFICIENT_FUNDS', 'INVALID_AMOUNT', 'INVALID_USER', 'INVALID_REQUEST',
+  'POCKET_NOT_FOUND', 'UNAUTHORIZED', 'BUSY',
+]);
+
+const UNCERTAIN_REASON = 'Could not confirm the expense was saved. '
+  + 'Tap Save again — it will not be recorded twice.';
+
+/** A fresh idempotency key: a UUID where available, else a random string of the same shape. */
+function newRequestId() {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  const rand = () => Math.random().toString(16).slice(2, 10).padEnd(8, '0');
+  return rand() + '-' + rand() + '-' + Date.now().toString(16);
+}
+
 /** Strip $ , and spaces, then coerce to a Number. Mirrors isValidAmount. */
 function parseAmount(input) {
   return Number(String(input ?? '').replace(/[$,\s]/g, ''));
@@ -161,6 +183,8 @@ export function mountAddForm({ root, api, state, users, onAdded, onError, toast,
   let current = state || {};
   let inFlight = false;
   let disposed = false;
+  /** The in-doubt attempt, if any: `{ id, fingerprint }`. See DEFINITIVE_REJECTIONS. */
+  let pendingAttempt = null;
 
   const pockets = () => (Array.isArray(current.pockets) ? current.pockets : []);
   const pocketById = (id) => pockets().find((p) => p && p.id === id) || null;
@@ -299,11 +323,20 @@ export function mountAddForm({ root, api, state, users, onAdded, onError, toast,
       user: userEl ? String(userEl.value ?? '') : '',
     };
 
+    // Retrying the SAME expense reuses its requestId (so a lost response cannot
+    // become a second deduction); changing any field is a different expense.
+    const fingerprint = JSON.stringify([payload.pocketId, payload.amount, payload.note, payload.user]);
+    if (!pendingAttempt || pendingAttempt.fingerprint !== fingerprint) {
+      pendingAttempt = { id: newRequestId(), fingerprint };
+    }
+    payload.requestId = pendingAttempt.id;
+
     inFlight = true;
     syncSubmitState(); // disables submit for the duration of the request
 
     try {
       const result = await api.createTransaction(payload);
+      pendingAttempt = null;
 
       // Stay put. No navigation, no full reset: the pocket and the note context
       // survive so the next entry is one number and one tap. This is the
@@ -320,11 +353,14 @@ export function mountAddForm({ root, api, state, users, onAdded, onError, toast,
         // regression, so err.message goes to the toast untouched.
         if (typeof toast === 'function') toast(err.message, 'error');
       } else {
+        const known = Boolean(err && DEFINITIVE_REJECTIONS.has(err.code));
+        const message = known
+          ? (err.message || 'Could not save the expense.')
+          : UNCERTAIN_REASON;
         if (typeof onError === 'function') onError(err);
-        if (typeof toast === 'function') {
-          toast(err && err.message ? err.message : 'Could not save the expense.', 'error');
-        }
+        if (typeof toast === 'function') toast(message, 'error');
       }
+      if (err && DEFINITIVE_REJECTIONS.has(err.code)) pendingAttempt = null;
       // The amount stays put so the user can fix it and retry without retyping.
     } finally {
       inFlight = false;

@@ -95,3 +95,20 @@ test('styles.css sets the theme background to avoid a white flash', () => {
 test('inputs are 16px so Safari does not zoom on focus', () => {
   assert.match(css, /input[\s\S]*font-size:\s*16px/);
 });
+test('the toast is a light card with dark text, not bare text on the dark page', () => {
+  assert.match(html.match(/<div[^>]*id="toast"[^>]*>/)[0], /\bpb-toast\b/);
+  const rule = css.match(/\.pb-toast\s*\{([^}]*)\}/);
+  assert.ok(rule, '.pb-toast must be styled in styles.css');
+  const bg = rule[1].match(/background:\s*(#[0-9a-f]{6})/i);
+  const fg = rule[1].match(/(?:^|[;\s])color:\s*(#[0-9a-f]{6})/i);
+  assert.ok(bg && fg, 'both a background and a text colour are set');
+  const lum = (hex) => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+      .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const [light, dark] = [lum(bg[1]), lum(fg[1])];
+  assert.ok(light > 0.8, `background ${bg[1]} must be light`);
+  assert.ok(dark < 0.05, `text ${fg[1]} must be dark`);
+  assert.ok((light + 0.05) / (dark + 0.05) >= 7, 'contrast must be at least 7:1');
+});
