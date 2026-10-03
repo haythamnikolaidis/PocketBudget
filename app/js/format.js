@@ -69,11 +69,14 @@ export function relativeDay(iso, now = new Date()) {
   if (!iso) return '';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
-  const a = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-  const b = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  // The viewer's own calendar: a phone in Johannesburg at 01:30 on the 3rd is on
+  // the 3rd, even though UTC is still the 2nd. (Compared as UTC-of-local-date so
+  // the day count is exact across any clock change.)
+  const a = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  const b = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
   const days = Math.round((b - a) / 86400000);
   if (days <= 0) return 'Today';
   if (days === 1) return 'Yesterday';
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return MON[d.getUTCMonth()] + ' ' + d.getUTCDate();
+  return MON[d.getMonth()] + ' ' + d.getDate();
 }

@@ -5,12 +5,11 @@
 
 import { USERS } from './00_Config.gs.js';
 import { escapeCell } from './01_Utils.gs.js';
-import { computeRunRate, monthKey } from './04_Rollover.gs.js';
+import { computeRunRate, monthKey, localParts, daysInLocalMonth } from './04_Rollover.gs.js';
 
-/** Days elapsed in the reporting month (1-based, capped at daysInMonth). */
+/** Days elapsed in the reporting month, household-local (1-based, capped at daysInMonth). */
 export function daysElapsedInMonth(now = new Date(), daysInMonth = 31) {
-  const day = now instanceof Date ? now.getUTCDate() : new Date(now).getUTCDate();
-  return Math.min(Math.max(1, day), daysInMonth);
+  return Math.min(Math.max(1, localParts(now).day), daysInMonth);
 }
 
 /** Total spend within `month`, broken down by pocket and by user. */
@@ -24,7 +23,7 @@ export function summariseSpend(transactions, pockets, month) {
   let count = 0;
 
   for (const t of transactions) {
-    if (!t.timestamp || !t.timestamp.startsWith(month)) continue;
+    if (!t.timestamp || monthKey(new Date(t.timestamp)) !== month) continue;
     if (!known.has(t.pocketId)) continue;
     const amt = Number(t.amount) || 0;
     byPocket[t.pocketId] = (byPocket[t.pocketId] || 0) + amt;
@@ -190,7 +189,7 @@ function rebuildCharts(sheet, layout, width) {
 /** Write the report block and (re)build the native charts. Called by the daily trigger. */
 export function renderReport(sheet, { pockets, transactions, now = new Date() }) {
   const month = monthKey(now);
-  const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
+  const daysInMonth = daysInLocalMonth(now);
   const { rows, layout } = buildReport({ pockets, transactions, month, now, daysInMonth });
   const width = rows[0].length;
 

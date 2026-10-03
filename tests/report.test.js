@@ -65,8 +65,10 @@ test('buildReportRows appends a spouse-split block', () => {
 
 test('daysElapsedInMonth counts elapsed days, never more than the total', () => {
   assert.equal(daysElapsedInMonth(new Date('2026-10-01T00:30:00Z'), 31), 1);
+  assert.equal(daysElapsedInMonth(new Date('2026-10-10T23:00:00Z'), 31), 11, '01:00 SAST on the 11th');
   assert.equal(daysElapsedInMonth(new Date('2026-10-10T12:00:00Z'), 31), 10);
-  assert.equal(daysElapsedInMonth(new Date('2026-10-31T23:00:00Z'), 31), 31);
+  assert.equal(daysElapsedInMonth(new Date('2026-10-31T21:00:00Z'), 31), 31);
+  assert.equal(daysElapsedInMonth(new Date('2026-10-31T22:30:00Z'), 31), 1, 'already Nov 1 in SAST: capped to the new month');
 });
 /* ------------------------------------------------------ rendering (item 3) -- */
 

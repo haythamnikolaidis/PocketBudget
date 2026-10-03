@@ -20,6 +20,15 @@ export const ACTIONS = [
 /** Version of the deployed backend; returned by ping/getState so the client can warn on mismatch. */
 export const SERVER_VERSION = '1.0.0';
 
+/**
+ * The household's offset from UTC, in minutes: South Africa is UTC+2 all year (no
+ * daylight saving). MUST match "timeZone" in appsscript.json. Months, "days elapsed"
+ * and the rollover all use this, so an expense logged at 00:30 on the 1st counts
+ * in the new month rather than the old one. If the household ever moves, change
+ * both.
+ */
+export const UTC_OFFSET_MINUTES = 120;
+
 /** Milliseconds to wait for the script lock before giving up. */
 export const LOCK_TIMEOUT_MS = 20000;
 

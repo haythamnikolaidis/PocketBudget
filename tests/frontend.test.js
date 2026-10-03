@@ -98,3 +98,16 @@ test('the client preview of a limit change matches the server rule exactly', asy
     assert.equal(balanceAfterLimitChange(b, o, n), server(b, o, n), `${b} ${o} ${n}`);
   }
 });
+
+test('relativeDay uses the viewer\'s own calendar, not UTC (Johannesburg, 01:30 on the 3rd)', () => {
+  const prev = process.env.TZ;
+  process.env.TZ = 'Africa/Johannesburg';
+  try {
+    const now = new Date('2026-10-03T01:30:00+02:00');           // still the 2nd in UTC
+    assert.equal(relativeDay('2026-10-03T00:10:00+02:00', now), 'Today');
+    assert.equal(relativeDay('2026-10-02T23:50:00+02:00', now), 'Yesterday');
+    assert.equal(relativeDay('2026-09-28T12:00:00+02:00', now), 'Sep 28');
+  } finally {
+    if (prev === undefined) delete process.env.TZ; else process.env.TZ = prev;
+  }
+});

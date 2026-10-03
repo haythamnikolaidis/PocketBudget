@@ -74,7 +74,7 @@ export function getState(params) {
 
   const spentByPocket = {};
   for (const t of readTransactions()) {
-    if (!t.timestamp || !t.timestamp.startsWith(month)) continue;
+    if (!t.timestamp || monthKey(new Date(t.timestamp)) !== month) continue;
     spentByPocket[t.pocketId] = (spentByPocket[t.pocketId] || 0) + t.amount;
   }
 

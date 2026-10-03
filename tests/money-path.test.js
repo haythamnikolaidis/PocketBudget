@@ -362,3 +362,20 @@ test('IDS: nextTransactionId / nextPocketId honour the highest number ever issue
   assert.equal(nextPocketId(['P01'], 4), 'P05');
   assert.equal(nextPocketId([], 0), 'P01');
 });
+
+/* ----------------------------------------------------- timezone (item 12) -- */
+
+test('TZ: getState counts an expense logged at 00:30 SAST on the 1st in the NEW month', () => {
+  const s = setup({
+    pockets: [['P01', 'Groceries', 'Chase', 800, 700, 'Active']],
+    txns: [
+      ['T1001', new Date('2026-09-30T22:30:00Z'), 'Alex', 'P01', 40, 'just after midnight SAST'],
+      ['T1002', new Date('2026-09-30T21:30:00Z'), 'Alex', 'P01', 60, 'just before midnight SAST'],
+    ],
+  });
+  const oct = viaDispatcher('getState', { month: '2026-10' });
+  const sep = viaDispatcher('getState', { month: '2026-09' });
+  assert.equal(oct.pockets[0].spent, 40, 'only the 00:30 expense is October');
+  assert.equal(sep.pockets[0].spent, 60, 'the 23:30 one is still September');
+  s.restore();
+});
