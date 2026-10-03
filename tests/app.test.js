@@ -1385,3 +1385,47 @@ test('deleting an expense from an earlier month says the balance did not change'
   assert.match(h.byId.get('toast').textContent, /earlier month, so the balance is unchanged/);
   handle.teardown();
 });
+
+/* ---------------------------------------------- refresh after a write -- */
+
+test('a refresh asked for after a write is not satisfied by a fetch already in flight', async () => {
+  const h = makeHarness();
+  const old = { ...STATE, pockets: [{ ...STATE.pockets[0], balance: 340.5 }, STATE.pockets[1]] };
+  const fresh = { ...STATE, pockets: [{ ...STATE.pockets[0], balance: 300 }, STATE.pockets[1]] };
+  let calls = 0;
+  const gates = [];
+  const api = fakeApi();
+  api.getState = () => {
+    calls += 1;
+    const result = calls === 1 ? old : fresh;
+    return new Promise((resolve) => gates.push(() => resolve(result)));
+  };
+  const handle = await bootIn(h, { config: configuredConfig(), api });
+  // Boot's own fetch is in flight, and it will return the PRE-write sheet.
+  const afterWrite = handle.refresh({ fresh: true });
+  assert.equal(calls, 1, 'no second request until the first has settled');
+
+  gates[0]();
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(calls, 2, 'a second fetch was made to pick up the write');
+  gates[1]();
+  const state = await afterWrite;
+  assert.equal(state.pockets[0].balance, 300, 'the caller gets the post-write state');
+  assert.match(h.byId.get('pockets').innerHTML, /R300\.00/);
+  handle.teardown();
+});
+
+test('plain refreshes still coalesce into one request', async () => {
+  const h = makeHarness();
+  const api = fakeApi();
+  let calls = 0;
+  const gates = [];
+  api.getState = () => { calls += 1; return new Promise((resolve) => gates.push(() => resolve(STATE))); };
+  const handle = await bootIn(h, { config: configuredConfig(), api });
+  const a = handle.refresh();
+  const b = handle.refresh();
+  gates[0]();
+  await Promise.all([a, b]);
+  assert.equal(calls, 1);
+  handle.teardown();
+});

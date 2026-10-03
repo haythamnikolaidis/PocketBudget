@@ -429,6 +429,7 @@ export function boot(deps = {}) {
   let lastState = null;
   let lastUpdatedAt = null;
   let lastRefreshError = null;
+  let rerunRequested = false;
   let refreshPromise = null;
   let teardownAddForm = null;
   let teardownManage = null;
@@ -566,7 +567,7 @@ export function boot(deps = {}) {
           state,
           doc,
           toast: (message, kind) => toast(message, kind),
-          onAdded: () => { track(refresh()); },
+          onAdded: () => { track(refresh({ fresh: true })); },
           onError: (err) => { toast(describeError(err), 'error'); },
         });
       } else {
@@ -583,7 +584,7 @@ export function boot(deps = {}) {
           root: views.manage,
           api,
           state,
-          onChanged: () => { track(refresh()); },
+          onChanged: () => { track(refresh({ fresh: true })); },
           toast: (message) => { toast(message, 'success'); },
         });
       } else {
@@ -594,23 +595,14 @@ export function boot(deps = {}) {
     }
   }
 
-  /**
-   * Fetch state once and paint it.
-   *
-   * Concurrent callers share the in-flight promise. Two triggers firing at once
-   * (a mutation finishing as the app is foregrounded) would otherwise spend two
-   * cold starts to learn the same thing.
-   */
-  function refresh() {
-    if (torn) return Promise.resolve(lastState);
-    if (refreshPromise) return refreshPromise;
-
+  /** One fetch + paint. Never rejects; returns the state now on screen. */
+  function fetchAndPaint() {
     // The api client is called inside Promise.resolve() so that even a client
     // which throws SYNCHRONOUSLY lands on the microtask queue. Without this the
-    // catch/finally below would run before `refreshPromise =` was ever assigned,
-    // leaving the field permanently holding a resolved promise and every later
-    // refresh silently short-circuiting to stale data.
-    const run = Promise.resolve()
+    // catch/finally in refresh() would run before `refreshPromise =` was ever
+    // assigned, leaving the field permanently holding a resolved promise and
+    // every later refresh silently short-circuiting to stale data.
+    return Promise.resolve()
       .then(() => api.getState())
       .then((state) => {
         if (torn) return lastState;
@@ -638,6 +630,33 @@ export function boot(deps = {}) {
         }
         return lastState;
       });
+  }
+
+  /**
+   * Fetch state once and paint it.
+   *
+   * Concurrent callers share the in-flight promise. Two triggers firing at once
+   * (a mutation finishing as the app is foregrounded) would otherwise spend two
+   * cold starts to learn the same thing.
+   *
+   * EXCEPT after a write: pass `{ fresh: true }`. A fetch that was already in
+   * flight when the write landed may have read the sheet BEFORE it, so joining it
+   * would paint pre-write balances as if they were current. A fresh request waits
+   * for that fetch, then fetches once more, and every waiting caller gets the
+   * newer result.
+   */
+  function refresh(opts = {}) {
+    if (torn) return Promise.resolve(lastState);
+    if (refreshPromise) {
+      if (opts.fresh) rerunRequested = true;
+      return refreshPromise;
+    }
+
+    const run = fetchAndPaint().then((state) => {
+      if (!rerunRequested || torn) return state;
+      rerunRequested = false;
+      return fetchAndPaint();
+    });
 
     refreshPromise = run;
     // Clear only OUR own promise: a refresh started while this one settles must
@@ -914,7 +933,7 @@ on(els.setupCancel, 'click', () => {
         toast(res && res.refunded === false
           ? 'Deleted. It was from an earlier month, so the balance is unchanged.'
           : 'Deleted.', 'success');
-        return refresh();
+        return refresh({ fresh: true });
       })
       .catch((err) => {
         // Nothing changed, so nothing is refetched: the feed still shows the
@@ -984,7 +1003,7 @@ on(els.setupCancel, 'click', () => {
 
   return {
     ready,
-    refresh: () => track(refresh()),
+    refresh: (opts) => track(refresh(opts)),
     pending,
     teardown,
     getState: () => lastState,
