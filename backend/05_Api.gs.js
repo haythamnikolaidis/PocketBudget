@@ -8,7 +8,7 @@
 //      after the writes made under it have been flushed to the sheet.
 //   4. No handler throws to the client; failures come back as { ok:false, error }.
 
-import { ACTIONS, USERS, SHEETS, LOCK_TIMEOUT_MS } from './00_Config.gs.js';
+import { ACTIONS, USERS, SHEETS, LOCK_TIMEOUT_MS, MAX_NAME_LENGTH } from './00_Config.gs.js';
 import {
   toDollars, parseAmountInput, isValidUser, isValidRequestId, money, ok, fail,
 } from './01_Utils.gs.js';
@@ -35,6 +35,19 @@ function unlock(lock) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * Validate a pocket name / account. Returns an error envelope, or null when fine.
+ * `required` is true for a name (never blank), false for an optional account.
+ */
+function checkText(value, label, required) {
+  const text = String(value).trim();
+  if (required && !text) return fail('INVALID_NAME', label + ' is required.');
+  if (text.length > MAX_NAME_LENGTH) {
+    return fail('INVALID_NAME', label + ' must be ' + MAX_NAME_LENGTH + ' characters or fewer.');
+  }
+  return null;
 }
 
 /** Shape a stored pocket row into the API's pocket object. */
@@ -99,7 +112,8 @@ export function createPocket(params) {
   if (!verifyToken(params.token)) return fail('UNAUTHORIZED', 'Invalid or missing token.');
 
   const name = String(params.name ?? '').trim();
-  if (!name) return fail('INVALID_NAME', 'Pocket name is required.');
+  const nameProblem = checkText(name, 'Pocket name', true) || checkText(params.account ?? '', 'Bank account', false);
+  if (nameProblem) return nameProblem;
 
   let limitCents;
   try {
@@ -127,13 +141,27 @@ export function updatePocket(params) {
   const pocketId = String(params.pocketId ?? '');
   if (!findPocketRow(pocketId)) return fail('POCKET_NOT_FOUND', 'Pocket not found: ' + pocketId);
 
+  // The client checks these too, but the server is the one that must hold: a blank
+  // name or a zero limit (which locks the pocket) must not be savable by any caller.
+  if (params.name != null) {
+    const problem = checkText(params.name, 'Pocket name', true);
+    if (problem) return problem;
+  }
+  if (params.account != null) {
+    const problem = checkText(params.account, 'Bank account', false);
+    if (problem) return problem;
+  }
+
   let limit;
   if (params.limit != null) {
+    let limitCents;
     try {
-      limit = toDollars(parseAmountInput(params.limit));
+      limitCents = parseAmountInput(params.limit);
     } catch (err) {
       return fail('INVALID_AMOUNT', err.message);
     }
+    if (limitCents === 0) return fail('INVALID_AMOUNT', 'Monthly limit must be greater than zero.');
+    limit = toDollars(limitCents);
   }
 
   const patch = {};

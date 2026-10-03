@@ -25,7 +25,7 @@
  * without bumping it, the previous cache survived activate(), and users kept
  * running pre-fix code with no error to explain it.
  */
-const CACHE_VERSION = 'pocketbudget-8b66679851b8';
+const CACHE_VERSION = 'pocketbudget-d0dd654274fa';
 
 
 // The static app shell. Relative to the SW scope (the site root).

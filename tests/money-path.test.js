@@ -407,3 +407,41 @@ test('INJECTION: ordinary text is written untouched', () => {
   assert.equal(s.wb.txns._rows[1][5], 'Whole Foods = fine, 5+5');
   s.restore();
 });
+
+/* ------------------------------------------- server-side validation (14) -- */
+
+test('VALIDATION: updatePocket refuses a blank name, a zero limit, and over-long text', () => {
+  const s = setup();
+  const before = JSON.stringify(s.wb.pockets._rows);
+  for (const [patch, code] of [
+    [{ name: '' }, 'INVALID_NAME'],
+    [{ name: '   ' }, 'INVALID_NAME'],
+    [{ name: 'x'.repeat(61) }, 'INVALID_NAME'],
+    [{ account: 'y'.repeat(61) }, 'INVALID_NAME'],
+    [{ limit: 0 }, 'INVALID_AMOUNT'],
+    [{ limit: '0.00' }, 'INVALID_AMOUNT'],
+    [{ limit: -5 }, 'INVALID_AMOUNT'],
+  ]) {
+    const r = viaDispatcher('updatePocket', { pocketId: 'P01', ...patch });
+    assert.equal(r.ok, false, JSON.stringify(patch));
+    assert.equal(r.error, code, JSON.stringify(patch));
+  }
+  assert.equal(JSON.stringify(s.wb.pockets._rows), before, 'nothing was written');
+  s.restore();
+});
+
+test('VALIDATION: updatePocket still accepts good edits, an empty account, and a 60-char name', () => {
+  const s = setup();
+  assert.equal(viaDispatcher('updatePocket', { pocketId: 'P01', name: 'x'.repeat(60) }).ok, true);
+  assert.equal(viaDispatcher('updatePocket', { pocketId: 'P01', account: '' }).ok, true);
+  assert.equal(viaDispatcher('updatePocket', { pocketId: 'P01', limit: 500 }).ok, true);
+  s.restore();
+});
+
+test('VALIDATION: createPocket applies the same length limits', () => {
+  const s = setup();
+  assert.equal(viaDispatcher('createPocket', { name: 'x'.repeat(61), limit: 10 }).error, 'INVALID_NAME');
+  assert.equal(viaDispatcher('createPocket', { name: 'ok', account: 'y'.repeat(61), limit: 10 }).error, 'INVALID_NAME');
+  assert.equal(viaDispatcher('createPocket', { name: 'ok', limit: 10 }).ok, true);
+  s.restore();
+});

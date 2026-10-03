@@ -42,5 +42,8 @@ export const REQUEST_ID_LOOKBACK_ROWS = 200;
 /** Currency symbol shown in server-written messages (the insufficient-funds alert). South African rand. */
 export const CURRENCY_SYMBOL = 'R';
 
+/** Longest pocket name / bank account text accepted, in characters. */
+export const MAX_NAME_LENGTH = 60;
+
 /** Largest single expense the API will accept, in cents (R1,000,000). */
 export const MAX_AMOUNT_CENTS = 100000000;
