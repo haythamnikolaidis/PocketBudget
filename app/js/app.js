@@ -28,7 +28,7 @@ import { makeApi } from './api.js';
 import { formatMoney } from './format.js';
 import { renderPockets, renderActivity } from './render.js';
 import { mountAddForm, updateAddFormState } from './addform.js';
-import { mountManage } from './manage.js';
+import { mountManage, updateManageState } from './manage.js';
 
 /**
  * Version of this frontend.
@@ -552,10 +552,9 @@ export function boot(deps = {}) {
   /**
    * Mount (or re-mount) the add form and the manage screen against new state.
    *
-   * The add form has an update handle (updateAddFormState) precisely so a
-   * refresh does NOT blow away a half-typed expense. mountManage has no such
-   * handle, so its inputs are read out and restored across the remount — the
-   * same promise, kept for a screen nobody asked to lose.
+   * Both screens are mounted ONCE and then handed each new payload through an
+   * update handle (updateAddFormState / updateManageState), so a refresh never
+   * blows away a half-typed expense or the pocket being edited.
    */
   function mountChildScreens(state) {
     if (torn) return;
@@ -579,27 +578,17 @@ export function boot(deps = {}) {
     }
 
     try {
-      // Preserve whatever is currently typed into the manage form.
-      const typed = ['manage-name', 'manage-account', 'manage-limit']
-        .map((id) => {
-          const el = byId(id);
-          return el && el.value ? String(el.value) : '';
+      if (!teardownManage) {
+        teardownManage = mountManage({
+          root: views.manage,
+          api,
+          state,
+          onChanged: () => { track(refresh()); },
+          toast: (message) => { toast(message, 'success'); },
         });
-
-      if (teardownManage && typeof teardownManage === 'function') teardownManage();
-      teardownManage = mountManage({
-        root: views.manage,
-        api,
-        state,
-        onChanged: () => { track(refresh()); },
-        toast: (message) => { toast(message, 'success'); },
-      });
-
-      typed.forEach((value, i) => {
-        const id = ['manage-name', 'manage-account', 'manage-limit'][i];
-        const el = byId(id);
-        if (el && value) el.value = value;
-      });
+      } else {
+        updateManageState(teardownManage, state);
+      }
     } catch (err) {
       console.warn('[app] manage screen failed to mount:', err);
     }

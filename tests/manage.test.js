@@ -14,7 +14,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { mountManage } from '../app/js/manage.js';
+import { mountManage, updateManageState } from '../app/js/manage.js';
 import { ApiError } from '../app/js/api.js';
 
 /* ------------------------------------------------------------- fake DOM -- */
@@ -460,4 +460,49 @@ test('teardown removes every listener it registered', async () => {
       .reduce((n, list) => n + list.length, 0);
     assert.equal(after, 0);
   });
+});
+
+/* ------------------------------------------- refresh while editing (item 5) -- */
+
+test('a refresh while editing keeps edit mode, so Save changes still updates (not duplicates) the pocket', async () => {
+  await withFakeDom(() => withConfirm(true, async () => {
+    const m = await mount([POCKET, OTHER]);
+    await m.click('edit', 'P01');
+    m.type('name', 'Food');
+
+    // The user switches apps and back: the app pushes a fresh payload.
+    updateManageState(m.teardown, stateWith([{ ...POCKET, balance: 300 }, OTHER]));
+
+    assert.equal(m.nodes['manage-submit'].textContent, 'Save changes', 'still in edit mode');
+    assert.equal(m.nodes['manage-name'].value, 'Food', 'typed text untouched');
+    await m.submit();
+    assert.equal(m.api.calls.createPocket.length, 0, 'no duplicate pocket');
+    assert.equal(m.api.calls.updatePocket.length, 1);
+    assert.equal(m.api.calls.updatePocket[0].pocketId, 'P01');
+  }));
+});
+
+test('a refresh repaints the list with the new figures', async () => {
+  await withFakeDom(async () => {
+    const m = await mount([POCKET]);
+    updateManageState(m.teardown, stateWith([{ ...POCKET, balance: 12.34 }, OTHER]));
+    assert.match(m.nodes['manage-list'].html, /R12\.34/);
+    assert.match(m.nodes['manage-list'].html, /Gas/);
+  });
+});
+
+test('if the pocket being edited is archived elsewhere, the edit is cancelled with an explanation', async () => {
+  await withFakeDom(async () => {
+    const m = await mount([POCKET, OTHER]);
+    await m.click('edit', 'P01');
+    updateManageState(m.teardown, stateWith([OTHER]));
+    assert.equal(m.nodes['manage-submit'].textContent, 'Create pocket');
+    assert.equal(m.nodes['manage-name'].value, '');
+    assert.match(m.nodes['manage-reason'].textContent, /no longer editable/i);
+  });
+});
+
+test('updateManageState ignores a handle it does not recognise', () => {
+  assert.doesNotThrow(() => updateManageState(null, {}));
+  assert.doesNotThrow(() => updateManageState(() => {}, {}));
 });

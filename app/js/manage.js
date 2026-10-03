@@ -133,6 +133,9 @@ function clampWarning(newLimit, balance) {
  * @returns {Function} teardown
  */
 export function mountManage({ root, api, state, onChanged, toast } = {}) {
+  /** Latest getState payload; replaced by update() so a refresh never re-mounts this screen. */
+  let current = state;
+
   const pick = (id) => (root && typeof root.querySelector === 'function' ? root.querySelector('#' + id) : null);
 
   const list = pick('manage-list');
@@ -171,12 +174,12 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
     if (typeof onChanged === 'function') onChanged();
   };
 
-  const findPocket = (id) => activePockets(state).find((p) => String(p.id) === String(id));
+  const findPocket = (id) => activePockets(current).find((p) => String(p.id) === String(id));
 
   /* ------------------------------------------------------------ render -- */
 
   const render = () => {
-    const pockets = activePockets(state);
+    const pockets = activePockets(current);
     if (pockets.length === 0) {
       paint(list, '<p class="pb-empty px-1 py-6 text-center text-sm text-slate-500">' +
         'No active pockets yet. Create one below.</p>');
@@ -381,7 +384,7 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
 
   render();
 
-  return function teardown() {
+  function teardown() {
     for (const [target, type, fn] of bindings) {
       if (target && typeof target.removeEventListener === 'function') {
         target.removeEventListener(type, fn);
@@ -389,5 +392,38 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
     }
     editingId = null;
     busy = false;
+  }
+
+  /**
+   * Take a refreshed payload WITHOUT rebuilding the screen. Re-mounting on every
+   * refresh (including the one when you switch back to the app) reset the edit
+   * mode and the busy flag while leaving the typed values behind, so "Save
+   * changes" on an edited pocket quietly became "Create pocket" and made a
+   * duplicate.
+   */
+  teardown._applyState = (next) => {
+    current = next;
+    render();
+    if (editingId !== null && !findPocket(editingId)) {
+      // The pocket being edited was archived or removed elsewhere.
+      clearFields();
+      setMode(null);
+      say('That pocket is no longer editable. Create a new one instead.');
+    } else if (editingId !== null) {
+      onLimitInput();   // the balance may have moved: refresh the warning
+    }
   };
+
+  return teardown;
+}
+
+/**
+ * Push a refreshed getState payload into a mounted manage screen.
+ * @param {Function} mounted the teardown returned by mountManage()
+ * @param {object} state
+ */
+export function updateManageState(mounted, state) {
+  if (typeof mounted === 'function' && typeof mounted._applyState === 'function') {
+    mounted._applyState(state);
+  }
 }
