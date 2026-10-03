@@ -30,5 +30,8 @@ export const LOCK_TIMEOUT_MS = 20000;
  */
 export const REQUEST_ID_LOOKBACK_ROWS = 200;
 
-/** Largest single expense the API will accept, in cents ($1,000,000). */
+/** Currency symbol shown in server-written messages (the insufficient-funds alert). South African rand. */
+export const CURRENCY_SYMBOL = 'R';
+
+/** Largest single expense the API will accept, in cents (R1,000,000). */
 export const MAX_AMOUNT_CENTS = 100000000;

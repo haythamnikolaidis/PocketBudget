@@ -126,13 +126,13 @@ test('an INSUFFICIENT_FUNDS envelope becomes a thrown ApiError', async () => {
   const api = apiWith(async () => okJson({
     ok: false,
     error: 'INSUFFICIENT_FUNDS',
-    message: 'Insufficient funds in Dining Out. Remaining: $15.00',
+    message: 'Insufficient funds in Dining Out. Remaining: R15.00',
     context: { pocketId: 'P02', remaining: 15, amount: 99.99 },
   }));
 
   await assert.rejects(() => api.createTransaction({ user: 'Sam', pocketId: 'P02', amount: 99.99 }), (err) => {
     assert.equal(err.code, 'INSUFFICIENT_FUNDS');
-    assert.equal(err.message, 'Insufficient funds in Dining Out. Remaining: $15.00');
+    assert.equal(err.message, 'Insufficient funds in Dining Out. Remaining: R15.00');
     assert.equal(err.context.remaining, 15);
     return true;
   });

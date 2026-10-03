@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { computeRunRate, monthKey, shouldRollover, applyRollover } from '../backend/04_Rollover.gs.js';
 
 test('computeRunRate projects month-end spend from elapsed days', () => {
-  // 10 days in, $300 spent of an $800 pocket -> $300/10*31 = $930 projected.
+  // 10 days in, R300 spent of an R800 pocket -> R300/10*31 = R930 projected.
   const r = computeRunRate({ spent: 300, limit: 800, daysElapsed: 10, daysInMonth: 31 });
   assert.equal(r.projected, 930);
   assert.equal(r.pctUsed, 37.5);
@@ -13,7 +13,7 @@ test('computeRunRate projects month-end spend from elapsed days', () => {
 });
 
 test('computeRunRate is warning just over the limit, under 110%', () => {
-  // 10 days in, $280 spent -> projected 868, which is 108.5% of an $800 limit.
+  // 10 days in, R280 spent -> projected 868, which is 108.5% of an R800 limit.
   const r = computeRunRate({ spent: 280, limit: 800, daysElapsed: 10, daysInMonth: 31 });
   assert.equal(r.projected, 868);
   assert.equal(r.severity, 'warning');

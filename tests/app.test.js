@@ -1013,7 +1013,7 @@ test('delete asks first, names the expense, and does nothing if declined', async
   h.byId.get('activity').dispatch('click', { target: del });
   await handle.pending();
   assert.equal(asked.length, 1);
-  assert.match(asked[0], /\$65\.20/);
+  assert.match(asked[0], /R65\.20/);
   assert.match(asked[0], /Whole Foods/);
   assert.deepEqual(api.calls.deleteTransaction, [], 'declined: nothing is deleted');
 
@@ -1357,5 +1357,13 @@ test('Change connection opens setup; Cancel returns to the feed and refetches', 
   assert.equal(h.nav.hidden, false);
   assert.equal(api.calls.getState, 2);
 
+  handle.teardown();
+});
+
+test('the home summary is written in rand', async () => {
+  const h = makeHarness();
+  const handle = await bootIn(h, { config: configuredConfig(), api: fakeApi() });
+  await handle.ready;
+  assert.match(h.byId.get('home-summary').textContent, /^37% of R920\.00 left$/);
   handle.teardown();
 });

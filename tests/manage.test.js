@@ -197,10 +197,10 @@ test('mounting lists each pocket with its formatted balance', async () => {
   await withFakeDom(async () => {
     const m = await mount([POCKET, OTHER]);
     assert.match(m.nodes['manage-list'].html, /Groceries/);
-    assert.match(m.nodes['manage-list'].html, /\$340\.50/, 'balance of P01 is formatted');
-    assert.match(m.nodes['manage-list'].html, /\$800\.00/, 'limit of P01 is formatted');
+    assert.match(m.nodes['manage-list'].html, /R340\.50/, 'balance of P01 is formatted');
+    assert.match(m.nodes['manage-list'].html, /R800\.00/, 'limit of P01 is formatted');
     assert.match(m.nodes['manage-list'].html, /Gas/);
-    assert.match(m.nodes['manage-list'].html, /\$120\.00/);
+    assert.match(m.nodes['manage-list'].html, /R120\.00/);
   });
 });
 
@@ -362,8 +362,8 @@ test('lowering the limit below the balance warns that the balance will be reduce
     m.type('limit', '50');
     await Promise.all(fire(m.nodes['manage-limit'], 'input', { target: m.nodes['manage-limit'] }));
     const live = m.nodes['manage-reason'].textContent;
-    assert.match(live, /\$50\.00/, 'the warning names the new limit');
-    assert.match(live, /\$340\.50/, 'the warning names the balance that is about to drop');
+    assert.match(live, /R50\.00/, 'the warning names the new limit');
+    assert.match(live, /R340\.50/, 'the warning names the balance that is about to drop');
     assert.equal(m.api.calls.updatePocket.length, 0, 'typing a limit changes nothing on its own');
 
     await m.submit();
@@ -372,8 +372,8 @@ test('lowering the limit below the balance warns that the balance will be reduce
     const msg = prompts[0];
     assert.match(msg, /balance/i);
     assert.match(msg, /reduce/i, 'the wording says the balance goes down, not just that it changes');
-    assert.match(msg, /\$50\.00/, 'both figures are in the confirm text');
-    assert.match(msg, /\$340\.50/);
+    assert.match(msg, /R50\.00/, 'both figures are in the confirm text');
+    assert.match(msg, /R340\.50/);
 
     assert.equal(m.api.calls.updatePocket.length, 1);
     assert.deepEqual(m.api.calls.updatePocket[0], { pocketId: 'P01', name: 'Groceries', account: 'Chase Checking', limit: 50 });

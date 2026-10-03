@@ -1,6 +1,32 @@
 // app/js/format.js
 // Presentation helpers. Pure and tested — formatting bugs are silent and annoying.
 
+/** South African rand. One place to change if the currency ever does. */
+export const CURRENCY_SYMBOL = 'R';
+
+/**
+ * Reduce a typed amount to plain digits and an optional decimal point. Mirror of
+ * normaliseAmountText in backend/01_Utils.gs.js — keep the two identical.
+ *
+ *   'R1 234,56' -> '1234.56'   leading R or $, and space thousands, are dropped
+ *   '1,234.56'  -> '1234.56'   a comma is a thousands separator...
+ *   '12,50'     -> '12.50'     ...unless exactly 1-2 digits follow it: that is the
+ *                              decimal comma South African keypads type. Deleting it
+ *                              instead made R12,50 read as R1250.
+ */
+export function normaliseAmountText(input) {
+  const s = String(input ?? '').replace(/^\s*[Rr$]\s*/, '').replace(/[\s\u00a0\u202f]/g, '');
+  if (/^\d+,\d{1,2}$/.test(s)) return s.replace(',', '.');
+  return s.replace(/,/g, '');
+}
+
+/** A typed amount as a Number, or NaN when it is not one. */
+export function parseAmountText(input) {
+  const s = normaliseAmountText(input);
+  return s === '' ? NaN : Number(s);
+}
+
+/** Rand amount as 'R1,234.56' (negatives as '-R1,234.56'). */
 export function formatMoney(dollars) {
   const n = Number(dollars) || 0;
   const neg = n < 0;
@@ -8,7 +34,7 @@ export function formatMoney(dollars) {
   const whole = Math.floor(abs);
   const cents = String(Math.round((abs - whole) * 100)).padStart(2, '0');
   const withCommas = String(whole).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return (neg ? '-$' : '$') + withCommas + '.' + cents;
+  return (neg ? '-' : '') + CURRENCY_SYMBOL + withCommas + '.' + cents;
 }
 
 export function formatPct(pct) {
@@ -19,9 +45,7 @@ export function formatPct(pct) {
 
 /** Mirror of the backend's parseAmountInput rules, for instant client-side feedback. */
 export function isValidAmount(input) {
-  const s = String(input ?? '').replace(/[$,\s]/g, '');
-  if (s === '') return false;
-  const n = Number(s);
+  const n = parseAmountText(input);
   if (!Number.isFinite(n)) return false;
   if (n < 0) return false;
   if (Math.abs(n * 100 - Math.round(n * 100)) > 1e-9) return false;

@@ -28,7 +28,7 @@
 // `<img src=x onerror=...>` is inert text. See render.js for the same reasoning
 // on the HTML-string path.
 
-import { formatMoney, isValidAmount } from './format.js';
+import { formatMoney, isValidAmount, parseAmountText } from './format.js';
 
 /* --------------------------------------------------------------- messages -- */
 
@@ -68,9 +68,9 @@ function newRequestId() {
   return rand() + '-' + rand() + '-' + Date.now().toString(16);
 }
 
-/** Strip $ , and spaces, then coerce to a Number. Mirrors isValidAmount. */
+/** Typed amount as a Number (R, spaces and decimal commas understood). Mirrors isValidAmount. */
 function parseAmount(input) {
-  return Number(String(input ?? '').replace(/[$,\s]/g, ''));
+  return parseAmountText(input);
 }
 
 /* ------------------------------------------------------------- element io -- */
@@ -209,7 +209,7 @@ export function mountAddForm({ root, api, state, users, onAdded, onError, toast,
 
   /* --------------------------------------------------------- rendering -- */
 
-  /** 'Groceries — $340.50 left', with a depleted suffix on a locked pocket. */
+  /** 'Groceries — R340.50 left', with a depleted suffix on a locked pocket. */
   function pocketLabel(p) {
     const base = String(p.name ?? '').trim() || String(p.id ?? '');
     const left = formatMoney(p.balance);

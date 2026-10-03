@@ -22,15 +22,14 @@
 //      home feed, so an edit that appeared to succeed would be a change nobody
 //      can see.
 
-import { formatMoney, isValidAmount } from './format.js';
+import { formatMoney, isValidAmount, parseAmountText } from './format.js';
 import { esc } from './render.js';
 
 /* ------------------------------------------------------------- helpers -- */
 
-/** '$1,200.50' -> 1200.5. Mirrors isValidAmount's cleaning so both agree. */
+/** 'R1,200.50' -> 1200.5. Shares isValidAmount's cleaning so both agree. */
 function parseAmount(raw) {
-  const cleaned = String(raw ?? '').replace(/[$,\s]/g, '');
-  const n = Number(cleaned);
+  const n = parseAmountText(raw);
   return Number.isFinite(n) ? n : NaN;
 }
 

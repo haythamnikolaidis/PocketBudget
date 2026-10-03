@@ -536,7 +536,7 @@ export function boot(deps = {}) {
       const balance = Number(summary.totalBalance);
       const limit = Number(summary.totalLimit);
       els.homeSummary.textContent = Number.isFinite(balance) && Number.isFinite(limit) && limit > 0
-        ? `${Math.round((balance / limit) * 1000) / 10}% of ${Math.round(limit)} left`
+        ? `${Math.round((balance / limit) * 1000) / 10}% of ${formatMoney(limit)} left`
         : '';
     }
   }

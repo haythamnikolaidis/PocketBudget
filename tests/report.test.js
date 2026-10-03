@@ -16,7 +16,7 @@ const TXNS = [
 
 test('summariseSpend totals only transactions inside the month', () => {
   const s = summariseSpend(TXNS, POCKETS, '2026-10');
-  assert.equal(s.byPocket.P01, 65.2);    // the $500 is September, excluded
+  assert.equal(s.byPocket.P01, 65.2);    // the R500 is September, excluded
   assert.equal(s.byPocket.P02, 42);
   assert.equal(s.byUser.Alex, 65.2);
   assert.equal(s.byUser.Sam, 42);

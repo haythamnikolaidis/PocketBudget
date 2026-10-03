@@ -102,7 +102,7 @@ Tests import the `.gs.js` modules directly, so no build is needed to run them.
 ## Core rules
 
 - **Balances can never go negative.** The server rejects an over-budget expense
-  with `Insufficient funds in <Pocket>. Remaining: $<balance>` and mutates
+  with `Insufficient funds in <Pocket>. Remaining: R<balance>` and mutates
   nothing. Spending the *exact* remaining balance is allowed and locks the pocket.
 - **Concurrent writes are locked.** Deductions happen under `LockService`, with
   the balance re-read inside the lock, so two phones submitting at once cannot

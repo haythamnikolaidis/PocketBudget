@@ -84,7 +84,7 @@ test('INVARIANT 1: repeated spending never drives a balance below zero', () => {
     if (r.ok) { balance = r.pocket.balance; accepted++; }
     assert.ok(balance >= 0, 'balance went negative: ' + balance);
   }
-  assert.equal(accepted, 2, 'only two $4 spends fit into $10');
+  assert.equal(accepted, 2, 'only two R4 spends fit into R10');
   assert.equal(balance, 2);
   restore();
 });
@@ -143,14 +143,14 @@ test('INVARIANT 2: a second request is rejected as BUSY while the lock is held',
 test('INVARIANT 3: the rejection message matches the brief exactly', () => {
   const { restore } = withApi([['P02', 'Dining Out', 'Credit Card A', 250, 15, 'Active']], []);
   const r = createTransaction({ token: TOKEN, user: 'Sam', pocketId: 'P02', amount: 99.99 });
-  assert.equal(r.message, 'Insufficient funds in Dining Out. Remaining: $15.00');
+  assert.equal(r.message, 'Insufficient funds in Dining Out. Remaining: R15.00');
   restore();
 });
 
 test('INVARIANT 3: the message formats sub-dollar balances correctly', () => {
   const { restore } = withApi([['P01', 'Snacks', 'Chase', 50, 0.05, 'Active']], []);
   const r = createTransaction({ token: TOKEN, user: 'Alex', pocketId: 'P01', amount: 1 });
-  assert.equal(r.message, 'Insufficient funds in Snacks. Remaining: $0.05');
+  assert.equal(r.message, 'Insufficient funds in Snacks. Remaining: R0.05');
   restore();
 });
 
@@ -177,7 +177,7 @@ test('INVARIANT 4: handleRequest never throws, whatever it is handed', () => {
 
 test('deleteTransaction refunds the pocket and never pushes it over its limit', () => {
   const { restore, wb } = withApi([['P01', 'Groceries', 'Chase', 100, 40, 'Active']], []);
-  // Log $30 -> balance 10; deleting it must refund back to 40.
+  // Log R30 -> balance 10; deleting it must refund back to 40.
   const txn = createTransaction({ token: TOKEN, user: 'Alex', pocketId: 'P01', amount: 30 });
   assert.equal(txn.pocket.balance, 10);
 
@@ -189,7 +189,7 @@ test('deleteTransaction refunds the pocket and never pushes it over its limit', 
 });
 
 test('deleteTransaction clamps the refund at the pocket limit', () => {
-  // Balance 90, limit 100. A stale row claiming $50 must refund only $10,
+  // Balance 90, limit 100. A stale row claiming R50 must refund only R10,
   // never push the balance to 140.
   const wbSeed = freshWorkbook([['P01', 'Groceries', 'Chase', 100, 90, 'Active']], []);
   wbSeed.txns.appendRow(['T1001', new Date(), 'Alex', 'P01', 50, 'stale row']);

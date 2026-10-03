@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeConfig, resolveEndpoint } from '../app/js/config.js';
-import { formatMoney, formatPct, isValidAmount, relativeDay } from '../app/js/format.js';
+import { formatMoney, formatPct, isValidAmount, relativeDay, parseAmountText, normaliseAmountText } from '../app/js/format.js';
 
 test('makeConfig stores the endpoint and token', () => {
   const cfg = makeConfig();
@@ -40,10 +40,10 @@ test('resolveEndpoint trims whitespace and rejects non-https URLs', () => {
 });
 
 test('formatMoney renders dollars with cents', () => {
-  assert.equal(formatMoney(340.5), '$340.50');
-  assert.equal(formatMoney(0), '$0.00');
-  assert.equal(formatMoney(1234.5), '$1,234.50');
-  assert.equal(formatMoney(65), '$65.00');
+  assert.equal(formatMoney(340.5), 'R340.50');
+  assert.equal(formatMoney(0), 'R0.00');
+  assert.equal(formatMoney(1234.5), 'R1,234.50');
+  assert.equal(formatMoney(65), 'R65.00');
 });
 
 test('formatPct renders one decimal, guarding zero', () => {
@@ -64,4 +64,29 @@ test('relativeDay labels recent activity for the feed', () => {
   assert.equal(relativeDay('2026-10-01T14:20:00.000Z', now), 'Today');
   assert.equal(relativeDay('2026-09-30T14:20:00.000Z', now), 'Yesterday');
   assert.equal(relativeDay('2026-09-28T14:20:00.000Z', now), 'Sep 28');
+});
+
+test('formatMoney is rand: R prefix, comma thousands, negatives as -R', () => {
+  assert.equal(formatMoney(1234.5), 'R1,234.50');
+  assert.equal(formatMoney(-12), '-R12.00');
+  assert.ok(!formatMoney(5).includes('$'));
+});
+
+test('typed amounts understand R, space thousands and the decimal comma, exactly like the server', () => {
+  assert.equal(parseAmountText('R12.50'), 12.5);
+  assert.equal(parseAmountText('12,50'), 12.5, 'a decimal comma, not 1250');
+  assert.equal(parseAmountText('R1 234,56'), 1234.56);
+  assert.equal(parseAmountText('1,234'), 1234);
+  assert.equal(parseAmountText('1,234.56'), 1234.56);
+  assert.ok(Number.isNaN(parseAmountText('abc')));
+  assert.equal(isValidAmount('12,50'), true);
+  assert.equal(isValidAmount('R0'), false);
+  assert.equal(isValidAmount('12.505'), false, 'more than two decimals is still refused');
+});
+
+test('the client and server amount normalisers agree on every input', async () => {
+  const { normaliseAmountText: server } = await import('../backend/01_Utils.gs.js');
+  const inputs = ['R12,50', 'R1 234,56', '1 234,5', '1,234', '1,234.56', '12,345', '12.5', ' r 7 ', '$9',
+    '', 'R', '1,2,3', '1.234,56', '0,5', '1234,567', '12,50\u00a0', 'abc', '1R2'];
+  for (const s of inputs) assert.equal(normaliseAmountText(s), server(s), JSON.stringify(s));
 });

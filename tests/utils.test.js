@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   toCents, toDollars, parseAmountInput, isValidUser, isValidPocketId,
-  nextPocketId, nextTransactionId, ok, fail, money,
+  nextPocketId, nextTransactionId, ok, fail, money, normaliseAmountText,
 } from '../backend/01_Utils.gs.js';
 import { USERS } from '../backend/00_Config.gs.js';
 
@@ -80,7 +80,7 @@ test('ok() wraps a payload and stamps the version', () => {
 });
 
 test('fail() never leaks the code into message, and carries context', () => {
-  const r = fail('INSUFFICIENT_FUNDS', 'Insufficient funds in Groceries. Remaining: $340.50',
+  const r = fail('INSUFFICIENT_FUNDS', 'Insufficient funds in Groceries. Remaining: R340.50',
                  { pocketId: 'P01', remaining: 340.5 });
   assert.equal(r.ok, false);
   assert.equal(r.error, 'INSUFFICIENT_FUNDS');
@@ -88,9 +88,45 @@ test('fail() never leaks the code into message, and carries context', () => {
   assert.equal(r.context.remaining, 340.5);
 });
 
-test('money() formats cents as $1,234.56', () => {
-  assert.equal(money(6520), '$65.20');
-  assert.equal(money(10), '$0.10');
-  assert.equal(money(123456), '$1,234.56');
-  assert.equal(money(0), '$0.00');
+test('money() formats cents as R1,234.56', () => {
+  assert.equal(money(6520), 'R65.20');
+  assert.equal(money(10), 'R0.10');
+  assert.equal(money(123456), 'R1,234.56');
+  assert.equal(money(0), 'R0.00');
+});
+
+
+/* -------------------------------------------------------------- rand input -- */
+
+test('amounts accept a leading R and space thousands (South African formats)', () => {
+  assert.equal(parseAmountInput('R12.50'), 1250);
+  assert.equal(parseAmountInput('r 12.50'), 1250);
+  assert.equal(parseAmountInput('R1 234.56'), 123456);
+  assert.equal(parseAmountInput('1\u00a0234,56'), 123456);   // no-break space + decimal comma
+});
+
+test('a decimal comma is a decimal, not a thousands separator (R12,50 is twelve rand fifty)', () => {
+  assert.equal(parseAmountInput('12,50'), 1250, 'was 125000 when commas were just deleted');
+  assert.equal(parseAmountInput('0,5'), 50);
+  assert.equal(parseAmountInput('1234,56'), 123456);
+  assert.equal(toCents('12,50'), 1250);
+});
+
+test('a comma before exactly three digits is still a thousands separator', () => {
+  assert.equal(parseAmountInput('1,234'), 123400);
+  assert.equal(parseAmountInput('1,234.56'), 123456);
+  assert.equal(parseAmountInput('12,345'), 1234500);
+});
+
+test('ambiguous or malformed amounts are still rejected', () => {
+  assert.throws(() => parseAmountInput('1R2'), /Not a number/);
+  assert.throws(() => parseAmountInput('1.234,56'), /decimal places/, 'European format is not guessed at');
+  assert.throws(() => parseAmountInput('R'), /Not a number/);
+  assert.equal(normaliseAmountText('R 1 000,5'), '1000.5');
+});
+
+test('money() and the too-large message use rand, never dollars', () => {
+  assert.equal(money(123456), 'R1,234.56');
+  assert.equal(money(-500), '-R5.00');
+  assert.throws(() => parseAmountInput('1000000.01'), /max R1,000,000/);
 });

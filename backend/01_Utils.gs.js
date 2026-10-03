@@ -1,13 +1,30 @@
 // CANONICAL SOURCE. Pure functions only — no SpreadsheetApp, no Date text parsing.
 
-import { USERS, SERVER_VERSION, MAX_AMOUNT_CENTS } from './00_Config.gs.js';
+import { USERS, SERVER_VERSION, MAX_AMOUNT_CENTS, CURRENCY_SYMBOL } from './00_Config.gs.js';
 
 /* ------------------------------------------------------------------ money -- */
 
-/** Parse a dollar-ish value into integer cents. Rejects anything non-numeric. */
+/**
+ * Reduce a typed amount to plain digits and an optional decimal point.
+ *
+ *   'R1 234,56'  -> '1234.56'   a leading R (or $) and space thousands are dropped
+ *   '1,234.56'   -> '1234.56'   a comma is a thousands separator...
+ *   '12,50'      -> '12.50'     ...unless exactly 1-2 digits follow it: then it is the
+ *                               decimal comma that South African phone keypads type.
+ *
+ * The last rule matters: with commas simply deleted, '12,50' became 1250 — a
+ * hundredfold overspend that still passes the balance check if the pocket is big enough.
+ */
+export function normaliseAmountText(input) {
+  const s = String(input ?? '').replace(/^\s*[Rr$]\s*/, '').replace(/[\s\u00a0\u202f]/g, '');
+  if (/^\d+,\d{1,2}$/.test(s)) return s.replace(',', '.');
+  return s.replace(/,/g, '');
+}
+
+/** Parse a rand-ish value into integer cents. Rejects anything non-numeric. */
 export function toCents(v) {
   if (typeof v === 'boolean') throw new Error('Not a number: ' + v);
-  const cleaned = String(v ?? '').replace(/[$,\s]/g, '');
+  const cleaned = normaliseAmountText(v);
   const n = cleaned === '' ? NaN : Number(cleaned);
   if (!Number.isFinite(n)) throw new Error('Not a number: ' + v);
   return Math.round(n * 100);
@@ -19,30 +36,30 @@ export function toDollars(cents) {
 
 /**
  * Parse a user-entered amount into integer cents.
- * Rejects: negatives, junk, more than 2 decimal places, and amounts over $1,000,000.
+ * Rejects: negatives, junk, more than 2 decimal places, and amounts over R1,000,000.
  */
 export function parseAmountInput(input) {
   if (typeof input === 'boolean') throw new Error('Not a number: ' + input);
-  const cleaned = String(input ?? '').replace(/[$,\s]/g, '');
+  const cleaned = normaliseAmountText(input);
   if (cleaned === '') throw new Error('Not a number: ' + input);
 
   const n = Number(cleaned);
   if (!Number.isFinite(n)) throw new Error('Not a number: ' + input);
   if (n < 0) throw new Error('Amount must be positive.');
   if (Math.abs(n * 100 - Math.round(n * 100)) > 1e-9) throw new Error('Amount has more than 2 decimal places (must be whole cents).');
-  if (Math.round(n * 100) > MAX_AMOUNT_CENTS) throw new Error('Amount is too large (max $1,000,000).');
+  if (Math.round(n * 100) > MAX_AMOUNT_CENTS) throw new Error('Amount is too large (max ' + CURRENCY_SYMBOL + '1,000,000).');
 
   return Math.round(n * 100);
 }
 
-/** Format integer cents as `$1,234.56`. */
+/** Format integer cents as `R1,234.56`. */
 export function money(cents) {
   const neg = cents < 0;
   const abs = Math.abs(cents);
   const dollars = Math.floor(abs / 100);
   const centsPart = String(abs % 100).padStart(2, '0');
   const withCommas = String(dollars).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return (neg ? '-$' : '$') + withCommas + '.' + centsPart;
+  return (neg ? '-' : '') + CURRENCY_SYMBOL + withCommas + '.' + centsPart;
 }
 
 /* ------------------------------------------------------------ validation -- */
