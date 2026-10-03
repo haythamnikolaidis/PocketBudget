@@ -4,7 +4,11 @@
 // `navigator.serviceWorker.register('./sw.js')` is evaluated as a classic script.
 //
 // The job of this file is narrow and deliberate:
-//   1. Precache the static app shell so the app opens with no connection.
+//   1. Keep a copy of the static shell as an OFFLINE FALLBACK. Code is fetched
+//      network-first, so a deploy is picked up on the next load; the cached copy
+//      only answers when the network is gone. A cold launch with no connection
+//      shows offline.html on purpose: a cached index.html would open a balances
+//      screen with nothing real behind it.
 //   2. NEVER serve data from a cache. Balances always come from the network.
 //
 // A cached balance is a lie. This app's entire value is that the numbers are
@@ -29,8 +33,7 @@ const CACHE_VERSION = 'pocketbudget-1d557c8f2cdc';
 
 
 // The static app shell. Relative to the SW scope (the site root).
-// './' is the manifest start_url; without it the very first offline launch has
-// nothing to navigate to.
+// './' is the manifest start_url, listed so the cache and the manifest agree.
 // NOTE: shell assets only. If you add a URL here, it must be a file in this
 // repository. API endpoints do not belong in this list, ever.
 const PRECACHE_URLS = [
