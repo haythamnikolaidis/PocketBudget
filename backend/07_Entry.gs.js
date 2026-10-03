@@ -86,7 +86,13 @@ export function dailyRollover() {
   const lastKey = props.getProperty('LAST_ROLLOVER_KEY');
   const now = new Date();
 
-  if (shouldRollover(lastKey, now)) {
+  if (!lastKey) {
+    // No record of ever rolling over: this is either a brand-new install or one set
+    // up before the key existed. Either way, resetting now would wipe whatever has
+    // been spent so far this month. Record the month and start rolling from the next.
+    props.setProperty('LAST_ROLLOVER_KEY', monthKey(now));
+    Logger.log('PocketBudget rollover: first run, recorded ' + monthKey(now) + ' without resetting.');
+  } else if (shouldRollover(lastKey, now)) {
     // Same lock as every expense: a rollover racing a submission could overwrite
     // the balance that submission had just deducted from. Throwing (rather than
     // skipping) leaves LAST_ROLLOVER_KEY unset, so the next run tries again.
@@ -150,12 +156,22 @@ function onOpen() {
  *   2. Run setup() once and authorise.
  *   3. Delete the call from any menu if you don't want one.
  */
-function setup() {
+export function setup() {
   const sheets = ensureSheets();
   const existing = getApiToken();
   const token = existing || Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
   if (!existing) setApiToken(token);
 
+  // Treat this month as already rolled over, so the first nightly run does not
+  // reset balances that have been spent down since setup.
+  const props = PropertiesService.getScriptProperties();
+  if (!props.getProperty('LAST_ROLLOVER_KEY')) props.setProperty('LAST_ROLLOVER_KEY', monthKey(new Date()));
+
+  // Idempotent: running setup() again must not stack a second trigger (two
+  // triggers means two rollovers and two report rebuilds a night).
+  for (const t of ScriptApp.getProjectTriggers()) {
+    if (t.getHandlerFunction() === 'dailyRollover') ScriptApp.deleteTrigger(t);
+  }
   ScriptApp.newTrigger('dailyRollover')
     .timeBased()
     .everyDays(1)

@@ -154,7 +154,7 @@ test('FLUSH: the lock is still released if the flush itself throws', () => {
 });
 
 test('FLUSH: the rollover takes the same lock, flushes, and releases', () => {
-  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 100, 'Active']] });
+  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 100, 'Active']], props: { LAST_ROLLOVER_KEY: '2026-01' } });
   dailyRollover();
   assert.equal(s.balance(), 800, 'rolled over to the limit');
   const tail = s.events.slice(s.events.indexOf('lock'));
@@ -163,11 +163,11 @@ test('FLUSH: the rollover takes the same lock, flushes, and releases', () => {
 });
 
 test('FLUSH: a rollover that cannot get the lock changes nothing and will retry', () => {
-  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 100, 'Active']] });
+  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 100, 'Active']], props: { LAST_ROLLOVER_KEY: '2026-01' } });
   s.hold();   // an expense is mid-flight
   assert.throws(() => dailyRollover(), /script lock/);
   assert.equal(s.balance(), 100, 'balances untouched');
-  assert.equal(globalThis.PropertiesService.getScriptProperties().getProperty('LAST_ROLLOVER_KEY'), null,
+  assert.equal(globalThis.PropertiesService.getScriptProperties().getProperty('LAST_ROLLOVER_KEY'), '2026-01',
     'the month is not marked done, so the next run retries');
   s.restore();
 });
@@ -258,6 +258,7 @@ test('ROLLOVER: balances are actually written back to the limit, archived pocket
       ['P02', 'Fuel', 'Chase', 300, 0, 'Active'],
       ['P03', 'Old', 'Chase', 50, 5, 'Archived'],
     ],
+    props: { LAST_ROLLOVER_KEY: '2026-01' },
   });
   dailyRollover();
   assert.deepEqual(s.wb.pockets._rows.slice(1).map((r) => r[4]), [800, 300, 5]);
@@ -265,7 +266,7 @@ test('ROLLOVER: balances are actually written back to the limit, archived pocket
 });
 
 test('ROLLOVER: running again in the same month does not reset spending', () => {
-  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 800, 'Active']] });
+  const s = setup({ pockets: [['P01', 'Groceries', 'Chase', 800, 800, 'Active']], props: { LAST_ROLLOVER_KEY: '2026-01' } });
   dailyRollover();
   createTransaction({ token: TOKEN, user: 'Alex', pocketId: 'P01', amount: 100 });
   dailyRollover();
