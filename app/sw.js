@@ -18,14 +18,15 @@
 /**
  * Cache namespace for this release.
  *
- * BUMP THIS ON EVERY DEPLOY. The activate handler deletes every cache whose name
- * is not exactly CACHE_VERSION, so this string is the only thing that separates
- * "the assets I shipped" from "the assets the user already has". Fail to bump it
- * and the app runs against a stale mix of old and new files — the classic
- * service-worker staleness bug, and a genuinely miserable one to debug because
- * the code on disk and the code in the cache differ with nothing to show it.
+ * GENERATED — do not edit by hand. `npm run build` replaces the value below
+ * with a content hash of 16 precached files, and `npm run check` fails if it is stale.
+ *
+ * This was hand-maintained once and that was a mistake: a deploy shipped
+ * without bumping it, the previous cache survived activate(), and users kept
+ * running pre-fix code with no error to explain it.
  */
-const CACHE_VERSION = 'pocketbudget-v1';
+const CACHE_VERSION = 'pocketbudget-1e7065e0ed65';
+
 
 // The static app shell. Relative to the SW scope (the site root).
 // './' is the manifest start_url; without it the very first offline launch has
@@ -153,24 +154,58 @@ async function handleNavigation(request) {
   }
 }
 
-/** cache-first for the immutable-by-version shell; network for anything else. */
+/**
+ * True for assets that are effectively immutable for a given release: icons and
+ * the manifest. Safe to serve cache-first, because CACHE_VERSION changes whenever
+ * their bytes change.
+ */
+function isImmutableAsset(url) {
+  return url.includes('/icons/') || url.endsWith('/manifest.webmanifest');
+}
+
+/**
+ * Network-first for code, cache-first for immutable assets.
+ *
+ * Code assets (JS, CSS, HTML) were previously cache-first, which meant a user who
+ * had visited once kept running the code from that visit until CACHE_VERSION
+ * changed. Even with a generated hash that is a needless window: a fix is not
+ * visible until the next load. Network-first closes it — the cache is now purely
+ * an offline fallback, so the app picks up a deploy on the next page load while
+ * still opening with no connection.
+ *
+ * The cost is one network round trip per code asset per load, which is negligible
+ * here: the assets are a few KB and Apps Script costs 1-3s per cold start anyway.
+ */
 async function handleAsset(request, url) {
   const cache = await caches.open(CACHE_VERSION);
-  if (isShellAsset(url)) {
+  const cacheable = isShellAsset(url);
+
+  if (cacheable && isImmutableAsset(url)) {
     const hit = await cache.match(request);
-    if (hit) return hit;
+    if (hit) return hit;   // icons never change within a release
   }
-  const response = await fetch(request);
-  // Only shell assets are ever written, and only the ones on the list above —
-  // so an API response cannot reach the cache even if it were same-origin.
-  if (isShellAsset(url) && response && response.ok && response.type !== 'opaque') {
-    try {
-      await cache.put(request, response.clone());
-    } catch (err) {
-      console.warn(`[sw] could not cache ${url}:`, err);
+
+  try {
+    const response = await fetch(request);
+    // Only shell assets are ever written, and only the ones on the list above —
+    // so an API response cannot reach the cache even if it were same-origin.
+    if (cacheable && response && response.ok && response.type !== 'opaque') {
+      try {
+        await cache.put(request, response.clone());
+      } catch (err) {
+        console.warn(`[sw] could not cache ${url}:`, err);
+      }
     }
+    return response;
+  } catch (err) {
+    // Offline: fall back to the precached copy. The shell still opens; the API
+    // call that follows fails loudly rather than showing a stale balance.
+    if (cacheable) {
+      const hit = await cache.match(request);
+      if (hit) return hit;
+    }
+    throw err;
   }
-  return response;
 }
 
 self.addEventListener('fetch', (event) => {

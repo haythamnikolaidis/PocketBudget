@@ -77,11 +77,17 @@
 
         <div class="flex gap-3">
           <button type="submit" id="setup-save"
-                  class="flex-1 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-ink disabled:opacity-50">
+                  class="flex-1 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-ink
+                         disabled:cursor-not-allowed disabled:opacity-50">
             Save
           </button>
+          <!-- Secondary button. It needs an explicit colour: inheriting the
+               page's light text on a transparent background made it read as a
+               disabled ghost control, which sent debugging down the wrong path. -->
           <button type="button" id="setup-test"
-                  class="rounded-lg border border-slate-700 px-4 py-2.5 text-sm disabled:opacity-50">
+                  class="rounded-lg border border-slate-500 bg-slate-800 px-4 py-2.5 text-sm
+                         font-medium text-slate-100 hover:bg-slate-700
+                         disabled:cursor-not-allowed disabled:opacity-50">
             Test connection
           </button>
         </div>

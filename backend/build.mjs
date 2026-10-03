@@ -12,6 +12,10 @@
 // Usage: npm run build
 
 import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 import { fileURLToPath } from 'node:url';
 import { dirname, join, basename } from 'node:path';
 
@@ -114,3 +118,16 @@ for (const f of files) {
 
 await writeFile(join(here, 'Backend.bundle.gs'), parts.join('\n') + '\n');
 console.log('[build] built Backend.bundle.gs (' + files.length + ' modules)');
+
+// Inject a content-hash CACHE_VERSION into the service worker. This must run on
+// every build: it is what guarantees a new release purges the previous cache.
+try {
+  const { stdout, stderr } = await execFileAsync('node', [join(here, 'sw-version.mjs')]);
+  process.stdout.write(stdout);
+  process.stderr.write(stderr);
+} catch (err) {
+  console.error('[build] failed to stamp the service worker cache version');
+  process.stderr.write(err.stdout || '');
+  process.stderr.write(err.stderr || '');
+  process.exit(1);
+}

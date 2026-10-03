@@ -297,23 +297,29 @@ test('install precaches every listed URL when they all exist', async () => {
 // 3. activate
 // ---------------------------------------------------------------------------
 
-test('CACHE_VERSION exists, is pocketbudget-v1, and activate deletes every other cache', async () => {
+test('CACHE_VERSION is a generated content hash, and activate purges other caches', async () => {
   const version = readConst(SW_SOURCE, 'CACHE_VERSION');
   assert.equal(typeof version, 'string');
-  assert.equal(version, 'pocketbudget-v1', 'release version must be pocketbudget-v1');
-  // The comment requirement: the file must document that it is bumped per deploy.
-  assert.match(SW_SOURCE, /CACHE_VERSION[\s\S]{0,400}bump/i, 'sw.js must say CACHE_VERSION is bumped on every deploy');
+
+  // No longer a hand-maintained literal: it is derived from the precached files,
+  // which is what makes forgetting impossible.
+  assert.match(
+    version,
+    /^pocketbudget-[0-9a-f]{12}$/,
+    'CACHE_VERSION must be a generated content hash, not a hand-written string',
+  );
+  assert.match(SW_SOURCE, /GENERATED — do not edit by hand/, 'sw.js must mark the value as generated');
 
   const w = makeWorker();
-  w.cacheStorage.seed('pocketbudget-v0', `${ORIGIN}/index.html`, { ok: true, status: 200 });
-  w.cacheStorage.seed('some-other-app', `${ORIGIN}/x`, { ok: true, status: 200 });
-  w.cacheStorage.seed(version, `${ORIGIN}/index.html`, { ok: true, status: 200 });
+  await w.fire('install');
+  // Simulate a previous release's cache sitting alongside the current one.
+  w.cacheStorage.seed('pocketbudget-stale', `${ORIGIN}/index.html`, { ok: true, status: 200 });
 
   await w.fire('activate');
 
-  const remaining = await w.cacheStorage.keys();
-  assert.deepEqual(remaining, [version], `only ${version} may survive activate`);
-  assert.equal(w.calls.claim, 1, 'activate must call self.clients.claim()');
+  assert.ok(w.cacheStorage.dump(version).length > 0, 'the current cache must survive activate');
+  assert.equal(w.cacheStorage.dump('pocketbudget-stale').length, 0,
+    'a previous release cache must be deleted');
 });
 
 // ---------------------------------------------------------------------------
@@ -408,16 +414,52 @@ test('navigation uses the network when it is available', async () => {
   assert.match(await responded.text(), /LIVE/);
 });
 
-test('cached shell assets are served cache-first without hitting the network', async () => {
+test('code assets are network-first, so a deploy is picked up on the next load', async () => {
+  // Previously cache-first, which meant a user kept running the code from their
+  // first visit until CACHE_VERSION changed. That is how a shipped fix failed to
+  // reach a device: no network traffic, no console error, a dead button.
   const w = makeWorker();
   await w.fire('install');
+  const version = readConst(SW_SOURCE, 'CACHE_VERSION');
 
-  let hits = 0;
-  w.cacheStorage.__fetchImpl = async () => { hits += 1; throw new TypeError('network must not be used'); };
+  // Seed the cache with a stale copy, then let the network serve a fresh one.
+  w.cacheStorage.seed(version, `${ORIGIN}/js/app.js`, staleResponse('STALE'));
+
+  let networkHit = 0;
+  w.cacheStorage.__fetchImpl = async (url) => {
+    networkHit += 1;
+    return freshResponse('FRESH', url);
+  };
 
   const { responded } = await w.fire('fetch', { request: req(`${ORIGIN}/js/app.js`) });
-  assert.equal(hits, 0, 'a precached asset must be served from the cache');
-  assert.match(await responded.text(), /js\/app\.js/);
+
+  assert.equal(networkHit, 1, 'a code asset must go to the network first');
+  assert.equal(await responded.text(), 'FRESH', 'the network response must win over the cached copy');
+});
+
+test('code assets still fall back to the cache when offline', async () => {
+  const w = makeWorker();
+  await w.fire('install');
+  const version = readConst(SW_SOURCE, 'CACHE_VERSION');
+  w.cacheStorage.seed(version, `${ORIGIN}/js/app.js`, staleResponse('CACHED'));
+
+  w.cacheStorage.__fetchImpl = async () => { throw new Error('offline'); };
+
+  const { responded } = await w.fire('fetch', { request: req(`${ORIGIN}/js/app.js`) });
+  assert.equal(await responded.text(), 'CACHED', 'offline must still open the shell from cache');
+});
+
+test('icons stay cache-first: they cannot change within a release', async () => {
+  const w = makeWorker();
+  await w.fire('install');
+  const version = readConst(SW_SOURCE, 'CACHE_VERSION');
+  w.cacheStorage.seed(version, `${ORIGIN}/icons/icon-192.png`, staleResponse('PNG'));
+
+  let networkHit = 0;
+  w.cacheStorage.__fetchImpl = async (url) => { networkHit += 1; return freshResponse('NEW', url); };
+
+  await w.fire('fetch', { request: req(`${ORIGIN}/icons/icon-192.png`) });
+  assert.equal(networkHit, 0, 'a cached icon should be served without a network round trip');
 });
 
 test('an uncached same-origin asset falls through to the network', async () => {
@@ -485,3 +527,16 @@ test('offline.html is referenced by the precache list under exactly ./offline.ht
   const swOfflineUrls = SW_SOURCE.match(/offline\.html/g) ?? [];
   assert.ok(swOfflineUrls.length >= 1);
 });
+
+
+/** A cached-style response the fake cache can store and return. */
+function staleResponse(body) {
+  return { ok: true, status: 200, type: 'basic', body,
+    async text() { return body; }, clone() { return this; } };
+}
+
+/** A network-style response. */
+function freshResponse(body, url = '') {
+  return { ok: true, status: 200, type: 'basic', url, body,
+    async text() { return body; }, clone() { return this; } };
+}
