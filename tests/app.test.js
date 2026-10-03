@@ -1429,3 +1429,37 @@ test('plain refreshes still coalesce into one request', async () => {
   assert.equal(calls, 1);
   handle.teardown();
 });
+
+/* ------------------------------------ the pocket card's Add expense button -- */
+
+function cardButton(h, pocketId, { disabled = false } = {}) {
+  const btn = makeEl('', 'button');
+  btn.setAttribute('data-action', 'select-pocket');
+  btn.setAttribute('data-pocket-id', pocketId);
+  btn.disabled = disabled;
+  h.byId.get('pockets').appendChild(btn);
+  return btn;
+}
+
+test('"Add expense" on a pocket card opens the add form with that pocket selected', async () => {
+  const h = makeHarness();
+  const handle = await bootIn(h, { config: configuredConfig(), api: fakeApi() });
+  await handle.ready;
+
+  h.byId.get('pockets').dispatch('click', { target: cardButton(h, 'P01') });
+
+  assert.equal(h.byId.get('view-add').hidden, false, 'switched to the add view');
+  assert.equal(h.byId.get('view-home').hidden, true);
+  assert.equal(h.byId.get('add-pocket').value, 'P01');
+  assert.equal(h.byId.get('add-amount').focused, true, 'cursor is in the amount field');
+  handle.teardown();
+});
+
+test('a depleted pocket\'s card button does nothing', async () => {
+  const h = makeHarness();
+  const handle = await bootIn(h, { config: configuredConfig(), api: fakeApi() });
+  await handle.ready;
+  h.byId.get('pockets').dispatch('click', { target: cardButton(h, 'P02', { disabled: true }) });
+  assert.equal(h.byId.get('view-home').hidden, false, 'stays on home');
+  handle.teardown();
+});

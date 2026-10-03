@@ -942,6 +942,22 @@ on(els.setupCancel, 'click', () => {
       }));
   });
 
+  // "Add expense" on a pocket card: jump to the add form with that pocket chosen.
+  // (The button was rendered but nothing listened to it.)
+  on(els.pockets, 'click', (ev) => {
+    const btn = ev && ev.target && typeof ev.target.closest === 'function'
+      ? ev.target.closest('[data-action="select-pocket"]')
+      : null;
+    if (!btn || btn.disabled) return;
+    const dataset = btn.dataset || {};
+    const id = dataset.pocketId || (btn.getAttribute && btn.getAttribute('data-pocket-id'));
+    if (!id) return;
+    switchView(views, tabs, 'add');
+    if (typeof teardownAddForm === 'function' && typeof teardownAddForm.selectPocket === 'function') {
+      teardownAddForm.selectPocket(String(id));
+    }
+  });
+
   // The stale banner doubles as the retry affordance: it is the only element on
   // screen when a fetch fails, so it has to be the thing you tap.
   on(els.staleBanner, 'click', () => { if (config.isConfigured()) track(refresh()); });

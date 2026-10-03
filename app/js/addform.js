@@ -446,6 +446,20 @@ export function mountAddForm({ root, api, state, users, onAdded, onError, toast,
   teardown.isSubmitting = () => inFlight;
 
   /**
+   * Pre-select a pocket (the home screen's "Add expense" button) and put the
+   * cursor in the amount field. A depleted or unknown pocket is ignored, so the
+   * form never starts on something that cannot be spent from.
+   */
+  teardown.selectPocket = (id) => {
+    const p = pocketById(String(id));
+    if (!p || isLocked(p) || !pocketEl) return false;
+    pocketEl.value = String(p.id);
+    syncSubmitState();
+    if (amountEl && typeof amountEl.focus === 'function') amountEl.focus();
+    return true;
+  };
+
+  /**
    * Replace the payload and re-render. Lives on the closure because `current`
    * is module-local state: this is the only way to reach it from outside, and
    * it guarantees the options and the submit gate are re-run together so they
