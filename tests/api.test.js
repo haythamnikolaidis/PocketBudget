@@ -49,7 +49,7 @@ test('createTransaction BLOCKS overspend with the exact brief message', () => {
   const r = createTransaction({ token: TOKEN, user: 'Alex', pocketId: 'P02', amount: 99.99, note: 'Dinner' });
   assert.equal(r.ok, false);
   assert.equal(r.error, 'INSUFFICIENT_FUNDS');
-  assert.equal(r.message, 'Insufficient funds in Dining Out. Remaining: $15.00');
+  assert.equal(r.message, 'Insufficient funds in Dining Out. Remaining: R15.00');
   assert.equal(r.context.remaining, 15);
   assert.equal(wb.pockets.getRange(3, 5).getValues()[0][0], 15);   // untouched
   assert.equal(wb.txns._rows.length, 3);                            // no row appended

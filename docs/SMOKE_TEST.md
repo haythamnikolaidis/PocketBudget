@@ -32,7 +32,8 @@ This proves or disproves the central design decision.
 
 **Pass looks like:**
 
-- One `GET` to `script.google.com/macros/s/…/exec`
+- One `POST` to `script.google.com/macros/s/…/exec` (every call is a POST, so the
+  token is in the request body and **never in the URL**)
 - Followed by a **302** to `script.googleusercontent.com`
 - Then **200** with a JSON response
 - **No `OPTIONS` request anywhere in the list**
@@ -58,21 +59,21 @@ something set `Content-Type: application/json`. Go to `app/js/api.js`, find
 
 ## 3. Writing (instant deduction)
 
-1. Log a $10.00 expense.
+1. Log an R10.00 expense.
 2. Confirm the `POST` went out with `Content-Type: text/plain;charset=utf-8`
 3. Confirm **no `OPTIONS` request appeared**
-4. Confirm the pocket balance dropped by exactly $10.00
+4. Confirm the pocket balance dropped by exactly R10.00
 5. Confirm the new row appears at the top of the activity feed with your user tag
 
 ---
 
 ## 4. The blocking rule (the product's whole point)
 
-1. Pick the **Dining Out** pocket ($15.00 remaining in the fixture data).
-2. Try to log $9,999.99.
+1. Pick the **Dining Out** pocket (R15.00 remaining in the fixture data).
+2. Try to log R9,999.99.
 3. Confirm the alert reads **exactly**:
 
-   > Insufficient funds in Dining Out. Remaining: $15.00
+   > Insufficient funds in Dining Out. Remaining: R15.00
 
 4. Confirm the balance **did not move**
 5. Confirm **no transaction was created** (the feed is unchanged)
@@ -81,7 +82,7 @@ something set `Content-Type: application/json`. Go to `app/js/api.js`, find
 
 ## 5. Zero-balance lock
 
-1. Spend a pocket down to exactly $0.00 (log its full remaining balance).
+1. Spend a pocket down to exactly R0.00 (log its full remaining balance).
 2. Confirm the card shows a **Depleted** badge and switches colour
 3. Confirm the pocket is disabled in the Add screen's pocket list
 4. Confirm any further submission is blocked with the insufficient-funds alert
@@ -92,10 +93,10 @@ something set `Content-Type: application/json`. Go to `app/js/api.js`, find
 
 This is the boundary case that must **succeed**, not fail:
 
-1. Note a pocket's remaining balance, e.g. $12.34
-2. Log exactly $12.34
+1. Note a pocket's remaining balance, e.g. R12.34
+2. Log exactly R12.34
 3. Confirm **success**
-4. Confirm the pocket is now locked at $0.00
+4. Confirm the pocket is now locked at R0.00
 
 > If this rejects, the non-negative check is using `>=` where it must use `>`.
 
@@ -116,9 +117,9 @@ This is the boundary case that must **succeed**, not fail:
 
 Two phones submitting at the same moment must never produce a wrong balance.
 
-1. On two devices, log a $5 expense into the same pocket at the same instant
+1. On two devices, log an R5 expense into the same pocket at the same instant
 2. Confirm **both** transactions are recorded
-3. Confirm the balance dropped by exactly $10.00
+3. Confirm the balance dropped by exactly R10.00
 4. If you see a `BUSY` rejection on one device, that is acceptable — retrying is
    correct behaviour, and the balance must still be right
 

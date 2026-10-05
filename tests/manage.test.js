@@ -14,7 +14,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { mountManage } from '../app/js/manage.js';
+import { mountManage, updateManageState } from '../app/js/manage.js';
 import { ApiError } from '../app/js/api.js';
 
 /* ------------------------------------------------------------- fake DOM -- */
@@ -67,7 +67,7 @@ function makeEl(id = '') {
  */
 function fakeShell() {
   const ids = ['manage-list', 'manage-form', 'manage-name', 'manage-account',
-               'manage-limit', 'manage-submit', 'manage-reason'];
+               'manage-limit', 'manage-submit', 'manage-reason', 'manage-archived'];
   const nodes = {};
   for (const id of ids) nodes[id] = makeEl(id);
   nodes['manage-form'].type = 'form';
@@ -197,10 +197,10 @@ test('mounting lists each pocket with its formatted balance', async () => {
   await withFakeDom(async () => {
     const m = await mount([POCKET, OTHER]);
     assert.match(m.nodes['manage-list'].html, /Groceries/);
-    assert.match(m.nodes['manage-list'].html, /\$340\.50/, 'balance of P01 is formatted');
-    assert.match(m.nodes['manage-list'].html, /\$800\.00/, 'limit of P01 is formatted');
+    assert.match(m.nodes['manage-list'].html, /R340\.50/, 'balance of P01 is formatted');
+    assert.match(m.nodes['manage-list'].html, /R800\.00/, 'limit of P01 is formatted');
     assert.match(m.nodes['manage-list'].html, /Gas/);
-    assert.match(m.nodes['manage-list'].html, /\$120\.00/);
+    assert.match(m.nodes['manage-list'].html, /R120\.00/);
   });
 });
 
@@ -362,8 +362,8 @@ test('lowering the limit below the balance warns that the balance will be reduce
     m.type('limit', '50');
     await Promise.all(fire(m.nodes['manage-limit'], 'input', { target: m.nodes['manage-limit'] }));
     const live = m.nodes['manage-reason'].textContent;
-    assert.match(live, /\$50\.00/, 'the warning names the new limit');
-    assert.match(live, /\$340\.50/, 'the warning names the balance that is about to drop');
+    assert.match(live, /R50\.00/, 'the warning names the new limit');
+    assert.match(live, /R340\.50/, 'the warning names the balance that is about to drop');
     assert.equal(m.api.calls.updatePocket.length, 0, 'typing a limit changes nothing on its own');
 
     await m.submit();
@@ -372,8 +372,8 @@ test('lowering the limit below the balance warns that the balance will be reduce
     const msg = prompts[0];
     assert.match(msg, /balance/i);
     assert.match(msg, /reduce/i, 'the wording says the balance goes down, not just that it changes');
-    assert.match(msg, /\$50\.00/, 'both figures are in the confirm text');
-    assert.match(msg, /\$340\.50/);
+    assert.match(msg, /R50\.00/, 'both figures are in the confirm text');
+    assert.match(msg, /R340\.50/);
 
     assert.equal(m.api.calls.updatePocket.length, 1);
     assert.deepEqual(m.api.calls.updatePocket[0], { pocketId: 'P01', name: 'Groceries', account: 'Chase Checking', limit: 50 });
@@ -399,6 +399,30 @@ test('raising a limit above the balance needs no clamp warning', async () => {
     await m.submit();
     assert.equal(prompts.length, 0, 'no balance-clamp prompt when the balance survives');
     assert.deepEqual(m.api.calls.updatePocket[0], { pocketId: 'P01', name: 'Groceries', account: 'Chase Checking', limit: 900 });
+  }));
+});
+
+test('raising a limit says how much it adds to the balance', async () => {
+  await withFakeDom(() => withConfirm(true, async () => {
+    const m = await mount([POCKET]);   // limit 800, balance 340.50
+    await m.click('edit', 'P01');
+    m.type('limit', '1000');
+    await Promise.all(fire(m.nodes['manage-limit'], 'input', { target: m.nodes['manage-limit'] }));
+    const note = m.nodes['manage-reason'].textContent;
+    assert.match(note, /adds R200\.00/);
+    assert.match(note, /R540\.50/);
+  }));
+});
+
+test('lowering a limit states the balance it will leave, not just the new limit', async () => {
+  await withFakeDom(() => withConfirm(true, async () => {
+    const m = await mount([POCKET]);   // limit 800, balance 340.50
+    await m.click('edit', 'P01');
+    m.type('limit', '600');
+    await Promise.all(fire(m.nodes['manage-limit'], 'input', { target: m.nodes['manage-limit'] }));
+    const warn = m.nodes['manage-reason'].textContent;
+    assert.match(warn, /R340\.50/, 'the balance now');
+    assert.match(warn, /R140\.50/, 'the balance after');
   }));
 });
 
@@ -459,5 +483,99 @@ test('teardown removes every listener it registered', async () => {
     const after = [...m.nodes['manage-form'].handlers.values(), ...m.nodes['manage-list'].handlers.values()]
       .reduce((n, list) => n + list.length, 0);
     assert.equal(after, 0);
+  });
+});
+
+/* ------------------------------------------- refresh while editing (item 5) -- */
+
+test('a refresh while editing keeps edit mode, so Save changes still updates (not duplicates) the pocket', async () => {
+  await withFakeDom(() => withConfirm(true, async () => {
+    const m = await mount([POCKET, OTHER]);
+    await m.click('edit', 'P01');
+    m.type('name', 'Food');
+
+    // The user switches apps and back: the app pushes a fresh payload.
+    updateManageState(m.teardown, stateWith([{ ...POCKET, balance: 300 }, OTHER]));
+
+    assert.equal(m.nodes['manage-submit'].textContent, 'Save changes', 'still in edit mode');
+    assert.equal(m.nodes['manage-name'].value, 'Food', 'typed text untouched');
+    await m.submit();
+    assert.equal(m.api.calls.createPocket.length, 0, 'no duplicate pocket');
+    assert.equal(m.api.calls.updatePocket.length, 1);
+    assert.equal(m.api.calls.updatePocket[0].pocketId, 'P01');
+  }));
+});
+
+test('a refresh repaints the list with the new figures', async () => {
+  await withFakeDom(async () => {
+    const m = await mount([POCKET]);
+    updateManageState(m.teardown, stateWith([{ ...POCKET, balance: 12.34 }, OTHER]));
+    assert.match(m.nodes['manage-list'].html, /R12\.34/);
+    assert.match(m.nodes['manage-list'].html, /Gas/);
+  });
+});
+
+test('if the pocket being edited is archived elsewhere, the edit is cancelled with an explanation', async () => {
+  await withFakeDom(async () => {
+    const m = await mount([POCKET, OTHER]);
+    await m.click('edit', 'P01');
+    updateManageState(m.teardown, stateWith([OTHER]));
+    assert.equal(m.nodes['manage-submit'].textContent, 'Create pocket');
+    assert.equal(m.nodes['manage-name'].value, '');
+    assert.match(m.nodes['manage-reason'].textContent, /no longer editable/i);
+  });
+});
+
+test('updateManageState ignores a handle it does not recognise', () => {
+  assert.doesNotThrow(() => updateManageState(null, {}));
+  assert.doesNotThrow(() => updateManageState(() => {}, {}));
+});
+
+
+/* ------------------------------------------------- archived pockets (restore) -- */
+
+function archivedClick(pocketId) {
+  const target = {
+    dataset: { action: 'restore', pocketId },
+    closest(sel) { return sel === '[data-action="restore"]' ? target : null; },
+  };
+  return { type: 'click', target };
+}
+
+test('archived pockets are listed with a Restore button, and names are escaped', async () => {
+  await withFakeDom(async () => {
+    const m = await mount([POCKET], { state: { ...stateWith([POCKET]),
+      archivedPockets: [{ id: 'P07', name: '<img src=x onerror=1>', account: '', limit: 50 }] } });
+    const html = m.nodes['manage-archived'].html;
+    assert.match(html, /Archived/);
+    assert.match(html, /data-action="restore"/);
+    assert.match(html, /data-pocket-id="P07"/);
+    assert.doesNotMatch(html, /<img/i);
+  });
+});
+
+test('no Archived section when nothing is archived', async () => {
+  await withFakeDom(async () => {
+    const m = await mount([POCKET]);
+    assert.equal(m.nodes['manage-archived'].html, '');
+  });
+});
+
+test('Restore sends unarchive:true for that pocket, then calls onChanged', async () => {
+  await withFakeDom(async () => {
+    const m = await mount([POCKET], { state: { ...stateWith([POCKET]),
+      archivedPockets: [{ id: 'P07', name: 'Old', account: '', limit: 50 }] } });
+    await Promise.all(fire(m.nodes['manage-archived'], 'click', archivedClick('P07')));
+    assert.deepEqual(m.api.calls.updatePocket, [{ pocketId: 'P07', unarchive: true }]);
+    assert.equal(m.changedCount(), 1);
+    assert.match(m.toasts[0], /Restored Old/);
+  });
+});
+
+test('a refresh repaints the Archived section', async () => {
+  await withFakeDom(async () => {
+    const m = await mount([POCKET]);
+    updateManageState(m.teardown, { ...stateWith([POCKET]), archivedPockets: [{ id: 'P09', name: 'Gifts', account: '', limit: 10 }] });
+    assert.match(m.nodes['manage-archived'].html, /Gifts/);
   });
 });

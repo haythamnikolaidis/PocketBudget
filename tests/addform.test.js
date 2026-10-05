@@ -288,7 +288,7 @@ test('updating state refreshes the live balances in the options', () => {
     pockets: [POCKETS[0], { ...POCKETS[1], balance: 12.25 }],
   });
   const gas = m.view.pocket.options.find((o) => o.value === 'P02');
-  assert.equal(gas.textContent, 'Gas — $12.25 left');
+  assert.equal(gas.textContent, 'Gas — R12.25 left');
 });
 
 test('a pocket that becomes locked on refresh is disabled', () => {
@@ -399,7 +399,7 @@ test('the note is cleared after a successful add', async () => {
 
 test('INSUFFICIENT_FUNDS surfaces err.message verbatim in the toast', async () => {
   const m = mount();
-  const verbatim = 'Insufficient funds in Groceries. Remaining: $340.50';
+  const verbatim = 'Insufficient funds in Groceries. Remaining: R340.50';
   m.api.createTransaction = () => Promise.reject(new ApiError('INSUFFICIENT_FUNDS', verbatim, { pocketId: 'P01' }));
 
   m.view.amount.value = '400';
@@ -413,7 +413,7 @@ test('INSUFFICIENT_FUNDS surfaces err.message verbatim in the toast', async () =
 
 test('an INSUFFICIENT_FUNDS message containing markup is shown as text, not reworded', async () => {
   const m = mount();
-  const verbatim = 'Insufficient funds in <script>alert(1)</script>. Remaining: $0.00';
+  const verbatim = 'Insufficient funds in <script>alert(1)</script>. Remaining: R0.00';
   m.api.createTransaction = () => Promise.reject(new ApiError('INSUFFICIENT_FUNDS', verbatim));
 
   m.view.amount.value = '5';
@@ -604,7 +604,7 @@ test('after the server REJECTS an expense the next attempt is a new one', async 
   let reject = true;
   m.api.createTransaction = (t) => {
     m.calls.push(t);
-    return reject ? Promise.reject(new ApiError('INSUFFICIENT_FUNDS', 'Insufficient funds in Groceries. Remaining: $1.00')) : Promise.resolve({ ok: true });
+    return reject ? Promise.reject(new ApiError('INSUFFICIENT_FUNDS', 'Insufficient funds in Groceries. Remaining: R1.00')) : Promise.resolve({ ok: true });
   };
   await save(m, '10');
   reject = false;
@@ -618,4 +618,73 @@ test('a server rejection keeps its own wording rather than the "not confirmed" m
   await save(m, '5');
   const last = m.toasts[m.toasts.length - 1];
   assert.equal(last.msg, 'Amount must be greater than zero.');
+});
+
+test('a decimal comma is sent as a decimal: "12,50" is R12.50, not R1,250', async () => {
+  const m = mount();
+  await save(m, '12,50');
+  assert.equal(m.calls[0].amount, 12.5);
+  m.view.amount.value = 'R7,5';
+  await m.view.submit.dispatch('click');
+  assert.equal(m.calls[1].amount, 7.5);
+});
+
+/* ----------------------------------------------- remembering "Who" (15) -- */
+
+function memStore(seed = {}) {
+  const m = new Map(Object.entries(seed));
+  return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), _m: m };
+}
+
+test('choosing who you are is remembered, and a fresh launch starts on that name', () => {
+  const store = memStore();
+  const first = mount({ opts: { userStore: store } });
+  assert.notEqual(first.view.user.value, 'Sam', 'nothing saved yet');
+  first.view.user.value = 'Sam';
+  first.view.user.dispatch('change');
+  assert.equal(store._m.get('pb.user'), 'Sam');
+  first.teardown();
+
+  const second = mount({ opts: { userStore: store } });   // next launch, same phone
+  assert.equal(second.view.user.value, 'Sam');
+});
+
+test('the remembered name survives a refresh of the form state', () => {
+  const store = memStore({ 'pb.user': 'Sam' });
+  const m = mount({ opts: { userStore: store } });
+  assert.equal(m.view.user.value, 'Sam');
+  updateAddFormState(m.teardown, { ...state });
+  assert.equal(m.view.user.value, 'Sam');
+});
+
+test('a remembered name that is no longer a household member is ignored', () => {
+  const m = mount({ opts: { userStore: memStore({ 'pb.user': 'Mallory' }) } });
+  assert.notEqual(m.view.user.value, 'Mallory');
+});
+
+test('storage that throws (a private window) never breaks the form', async () => {
+  const angry = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); } };
+  const m = mount({ opts: { userStore: angry } });
+  m.view.user.value = 'Sam';
+  assert.doesNotThrow(() => m.view.user.dispatch('change'));
+  m.view.amount.value = '5';
+  await m.view.submit.dispatch('click');
+  assert.equal(m.calls[0].user, 'Sam');
+});
+
+test('an insufficient-funds refusal asks the app to reload, so the screen shows the real balance', async () => {
+  let stale = 0;
+  const m = mount({ opts: { onStale: () => { stale += 1; } } });
+  m.api.createTransaction = () => Promise.reject(new ApiError('INSUFFICIENT_FUNDS', 'Insufficient funds in Groceries. Remaining: R1.00'));
+  await save(m, '50');
+  assert.equal(stale, 1);
+  assert.equal(m.toasts.at(-1).msg, 'Insufficient funds in Groceries. Remaining: R1.00', 'wording untouched');
+});
+
+test('other failures do not trigger the stale reload', async () => {
+  let stale = 0;
+  const m = mount({ opts: { onStale: () => { stale += 1; } } });
+  m.api.createTransaction = () => Promise.reject(new ApiError('NETWORK', 'x'));
+  await save(m, '5');
+  assert.equal(stale, 0);
 });

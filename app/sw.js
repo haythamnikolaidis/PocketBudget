@@ -4,7 +4,11 @@
 // `navigator.serviceWorker.register('./sw.js')` is evaluated as a classic script.
 //
 // The job of this file is narrow and deliberate:
-//   1. Precache the static app shell so the app opens with no connection.
+//   1. Keep a copy of the static shell as an OFFLINE FALLBACK. Code is fetched
+//      network-first, so a deploy is picked up on the next load; the cached copy
+//      only answers when the network is gone. A cold launch with no connection
+//      shows offline.html on purpose: a cached index.html would open a balances
+//      screen with nothing real behind it.
 //   2. NEVER serve data from a cache. Balances always come from the network.
 //
 // A cached balance is a lie. This app's entire value is that the numbers are
@@ -19,24 +23,24 @@
  * Cache namespace for this release.
  *
  * GENERATED — do not edit by hand. `npm run build` replaces the value below
- * with a content hash of 16 precached files, and `npm run check` fails if it is stale.
+ * with a content hash of 17 precached files, and `npm run check` fails if it is stale.
  *
  * This was hand-maintained once and that was a mistake: a deploy shipped
  * without bumping it, the previous cache survived activate(), and users kept
  * running pre-fix code with no error to explain it.
  */
-const CACHE_VERSION = 'pocketbudget-30f3dcd676eb';
+const CACHE_VERSION = 'pocketbudget-c001eaa5df42';
 
 
 // The static app shell. Relative to the SW scope (the site root).
-// './' is the manifest start_url; without it the very first offline launch has
-// nothing to navigate to.
+// './' is the manifest start_url, listed so the cache and the manifest agree.
 // NOTE: shell assets only. If you add a URL here, it must be a file in this
 // repository. API endpoints do not belong in this list, ever.
 const PRECACHE_URLS = [
   './',
   './index.html',
   './offline.html',
+  './tailwind.css',
   './styles.css',
   './js/config.js',
   './js/format.js',

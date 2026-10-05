@@ -36,19 +36,6 @@ const SAFE_HEADERS = { 'Content-Type': 'text/plain;charset=utf-8' };
  */
 export const REQUEST_TIMEOUT_MS = 30000;
 
-/**
- * Build a GET URL with query params.
- * GET is CORS-safelisted, so reads need no preflight and are unaffected by §0.
- */
-function getUrl(endpoint, action, params = {}) {
-  const url = new URL(endpoint);
-  url.searchParams.set('action', action);
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v));
-  }
-  return url.toString();
-}
-
 /** Read a Response as JSON, converting a parse failure into an ApiError. */
 async function parseJson(res) {
   try {
@@ -115,7 +102,7 @@ function describe(err) {
  * The API client. One instance per app; pass `config` from config.js.
  */
 export function makeApi(config, { fetchImpl = fetch } = {}) {
-  const call = async (method, action, params = {}) => {
+  const call = async (action, params = {}) => {
     // One timer covers the whole exchange, body included.
     const ctl = typeof AbortController === 'function' ? new AbortController() : null;
     const timer = ctl ? setTimeout(() => ctl.abort(), REQUEST_TIMEOUT_MS) : null;
@@ -127,12 +114,10 @@ export function makeApi(config, { fetchImpl = fetch } = {}) {
       const token = config.getToken();
       const endpoint = config.getEndpoint();
 
-      const json = method === 'GET'
-        ? await fetchImpl(getUrl(endpoint, action, { ...params, token }),
-                          { method: 'GET', redirect: 'follow', signal })
-            .then(checkStatus)
-            .then(parseJson)
-        : await postJson(fetchImpl, endpoint, action, { ...params, token }, signal);
+      // EVERY request is a POST with the token in the body, reads included. A GET
+      // would put the token in the URL, which ends up in Google's request logs,
+      // browser history and any proxy. POST + text/plain is just as CORS-safe.
+      const json = await postJson(fetchImpl, endpoint, action, { ...params, token }, signal);
 
       return unwrap(json);
     } catch (err) {
@@ -144,12 +129,12 @@ export function makeApi(config, { fetchImpl = fetch } = {}) {
 
   return {
     /** Liveness + version. The setup screen uses this to validate a config. */
-    ping: () => call('GET', 'ping'),
+    ping: () => call('ping'),
     /** Everything the home screen needs, in one request. */
-    getState: (month) => call('GET', 'getState', month ? { month } : {}),
-    createPocket: (p) => call('POST', 'createPocket', p),
-    updatePocket: (p) => call('POST', 'updatePocket', p),
-    createTransaction: (t) => call('POST', 'createTransaction', t),
-    deleteTransaction: (txnId) => call('POST', 'deleteTransaction', { txnId }),
+    getState: (month) => call('getState', month ? { month } : {}),
+    createPocket: (p) => call('createPocket', p),
+    updatePocket: (p) => call('updatePocket', p),
+    createTransaction: (t) => call('createTransaction', t),
+    deleteTransaction: (txnId) => call('deleteTransaction', { txnId }),
   };
 }

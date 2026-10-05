@@ -1,10 +1,29 @@
 // backend/04_Rollover.gs.js
 // CANONICAL SOURCE. Pure functions — the caller does the Sheets writes.
 
-/** `YYYY-MM` in UTC, the key used to decide whether a rollover has happened. */
-export function monthKey(date = new Date()) {
+import { UTC_OFFSET_MINUTES } from './00_Config.gs.js';
+
+/** Calendar parts of an instant in the household's timezone: `{ year, month (1-12), day }`. */
+export function localParts(date = new Date()) {
   const d = date instanceof Date ? date : new Date(date);
-  return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
+  const shifted = new Date(d.getTime() + UTC_OFFSET_MINUTES * 60000);
+  return { year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1, day: shifted.getUTCDate() };
+}
+
+/** Days in the household-local month containing `date`. */
+export function daysInLocalMonth(date = new Date()) {
+  const { year, month } = localParts(date);
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+/**
+ * `YYYY-MM` in the household's timezone, the key used to decide whether a rollover
+ * has happened and which month an expense belongs to. (It was UTC, so anything
+ * logged between midnight and 02:00 SAST on the 1st landed in the previous month.)
+ */
+export function monthKey(date = new Date()) {
+  const { year, month } = localParts(date);
+  return year + '-' + String(month).padStart(2, '0');
 }
 
 /**

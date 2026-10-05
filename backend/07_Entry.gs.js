@@ -7,14 +7,14 @@
 // ever touches its own bound sheet — ask for the narrowest scope that works.
 
 import { handleRequest } from './05_Api.gs.js';
-import { verifyToken, getApiToken, setApiToken } from './02_Auth.gs.js';
+import { verifyToken, getApiToken, setApiToken, getUsers } from './02_Auth.gs.js';
 import {
   readPockets, readTransactions, getReportSheet, ensureSheets, flushWrites,
 } from './03_Sheets.gs.js';
 import { applyRollover, shouldRollover, monthKey } from './04_Rollover.gs.js';
 import { renderReport } from './06_Report.gs.js';
 import { writeBalance } from './03_Sheets.gs.js';
-import { USERS, SHEETS, LOCK_TIMEOUT_MS } from './00_Config.gs.js';
+import { USERS, USERS_PROPERTY, SHEETS, LOCK_TIMEOUT_MS } from './00_Config.gs.js';
 
 /** Serialize a response as ContentService JSON. */
 function json(res) {
@@ -48,7 +48,10 @@ export function parseRequest(e, method) {
 }
 
 /**
- * GET entry point.
+ * GET entry point. DEPRECATED for the app, which now sends every call (reads
+ * included) as a POST so the token is not in the URL. Kept so a phone still
+ * running the old cached frontend keeps working until it reloads.
+ *
  *
  * NOTE ON TRANSPORT (§0): GET is CORS-safelisted, so no preflight is sent and
  * fetch's default redirect:'follow' handles Apps Script's 302 to
@@ -86,7 +89,13 @@ export function dailyRollover() {
   const lastKey = props.getProperty('LAST_ROLLOVER_KEY');
   const now = new Date();
 
-  if (shouldRollover(lastKey, now)) {
+  if (!lastKey) {
+    // No record of ever rolling over: this is either a brand-new install or one set
+    // up before the key existed. Either way, resetting now would wipe whatever has
+    // been spent so far this month. Record the month and start rolling from the next.
+    props.setProperty('LAST_ROLLOVER_KEY', monthKey(now));
+    Logger.log('PocketBudget rollover: first run, recorded ' + monthKey(now) + ' without resetting.');
+  } else if (shouldRollover(lastKey, now)) {
     // Same lock as every expense: a rollover racing a submission could overwrite
     // the balance that submission had just deducted from. Throwing (rather than
     // skipping) leaves LAST_ROLLOVER_KEY unset, so the next run tries again.
@@ -117,11 +126,32 @@ export function dailyRollover() {
     }
   }
 
+  refreshReport(now);
+}
+
+/** Rebuild the Monthly_Report tab from the live sheets. Also on the PocketBudget menu. */
+export function refreshReport(now = new Date()) {
   renderReport(getReportSheet(), {
     pockets: readPockets(),
     transactions: readTransactions(),
     now,
+    users: getUsers(),
   });
+}
+
+/**
+ * Simple trigger: adds a PocketBudget menu to the sheet so the report can be
+ * refreshed on demand instead of waiting for the nightly run.
+ */
+function onOpen() {
+  try {
+    SpreadsheetApp.getUi()
+      .createMenu('PocketBudget')
+      .addItem('Refresh report', 'refreshReport')
+      .addToUi();
+  } catch (_) {
+    // No UI (a trigger or API run): nothing to add a menu to.
+  }
 }
 
 /**
@@ -130,12 +160,26 @@ export function dailyRollover() {
  *   2. Run setup() once and authorise.
  *   3. Delete the call from any menu if you don't want one.
  */
-function setup() {
+export function setup() {
   const sheets = ensureSheets();
   const existing = getApiToken();
   const token = existing || Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
   if (!existing) setApiToken(token);
 
+  // Treat this month as already rolled over, so the first nightly run does not
+  // reset balances that have been spent down since setup.
+  const props = PropertiesService.getScriptProperties();
+  if (!props.getProperty('LAST_ROLLOVER_KEY')) props.setProperty('LAST_ROLLOVER_KEY', monthKey(new Date()));
+
+  // Make the household member list visible and editable in Project Settings >
+  // Script Properties, rather than buried in code.
+  if (!props.getProperty(USERS_PROPERTY)) props.setProperty(USERS_PROPERTY, USERS.join(','));
+
+  // Idempotent: running setup() again must not stack a second trigger (two
+  // triggers means two rollovers and two report rebuilds a night).
+  for (const t of ScriptApp.getProjectTriggers()) {
+    if (t.getHandlerFunction() === 'dailyRollover') ScriptApp.deleteTrigger(t);
+  }
   ScriptApp.newTrigger('dailyRollover')
     .timeBased()
     .everyDays(1)
@@ -143,6 +187,6 @@ function setup() {
     .create();
 
   Logger.log('Sheets ready: ' + sheets.join(', '));
-  Logger.log('Users: ' + USERS.join(', '));
+  Logger.log('Users: ' + getUsers().join(', ') + '  (change with the USERS Script Property)');
   Logger.log('Household token (copy this into the PWA setup screen): ' + token);
 }
