@@ -8,7 +8,10 @@ import assert from 'node:assert/strict';
 
 import {
   esc,
-  pocketCardHtml,
+  pocketRowHtml,
+  pocketStatus,
+  summaryHtml,
+  renderSummary,
   activityRowHtml,
   renderPockets,
   renderActivity,
@@ -145,106 +148,180 @@ test('esc turns nullish into an empty string but keeps 0 and false', () => {
   assert.equal(esc(false), 'false');
 });
 
-/* ------------------------------------------------------- pocket card HTML -- */
+/* -------------------------------------------------------- pocket row HTML -- */
 
-test('pocketCardHtml escapes a name carrying an img onerror payload', () => {
-  const html = pocketCardHtml({ ...POCKET, name: '<img src=x onerror=alert(1)>' });
+/** Day 7 of a 31-day month: 22.58% elapsed, so 77.4% of a limit should be left. */
+const PACE = { day: 7, daysInMonth: 31, daysLeft: 24, elapsedPct: (7 / 31) * 100 };
+
+/** A pocket by how much of its 1000 limit is spent. */
+const spentPct = (pct, over = {}) => ({
+  ...POCKET,
+  limit: 1000,
+  balance: 1000 - pct * 10,
+  spent: pct * 10,
+  pctUsed: pct,
+  isLocked: false,
+  ...over,
+});
+
+test('pocketRowHtml escapes a name carrying an img onerror payload', () => {
+  const html = pocketRowHtml({ ...POCKET, name: '<img src=x onerror=alert(1)>' });
   assert.doesNotMatch(html, /<img/i);
   assert.doesNotMatch(html, liveAttr('onerror'), 'payload broke out into a live attribute');
   assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt;'), html);
-  // The card still has exactly one element per known part; nothing extra opened.
+  // The row is one button; nothing extra opened.
   assert.equal(buttonTags(html).length, 1);
-  assert.equal((html.match(/<h3\b/g) || []).length, 1);
 });
 
-test('pocketCardHtml escapes the account name too', () => {
-  const html = pocketCardHtml({ ...POCKET, account: '"><script>alert(2)</script>' });
+test('pocketRowHtml escapes the account name, including the data attribute copy', () => {
+  const html = pocketRowHtml({ ...POCKET, account: '"><script>alert(2)</script>' });
   assert.doesNotMatch(html, /<script/i);
   assert.ok(html.includes('&lt;script&gt;alert(2)&lt;/script&gt;'), html);
+  assert.doesNotMatch(html, liveAttr('onerror'));
 });
 
-test('pocketCardHtml shows the balance of the limit, formatted as money', () => {
-  const html = pocketCardHtml(POCKET);
-  assert.ok(html.includes('R340.50'), 'balance');
-  assert.ok(html.includes('R800.00'), 'limit');
-  assert.match(html, /R340\.50[\s\S]{0,80}of[\s\S]{0,80}R800\.00/);
+test('pocketRowHtml leads with the amount LEFT, then the limit, in whole rands', () => {
+  const html = pocketRowHtml(POCKET);
+  assert.match(html, /pb-pocket__left">R340</, 'balance, rounded down');
+  assert.match(html, /\/ R800</, 'limit');
+  assert.doesNotMatch(html.replace(/aria-label="[^"]*"/, ''), /R340\.50|R800\.00/, 'no cents on screen');
+  assert.doesNotMatch(html.replace(/aria-label="[^"]*"/, ''), /\bof\b/, 'no "X of Y" phrasing on screen');
+  assert.ok(buttonTags(html)[0].includes('R340.50'), 'exact balance stays in the accessible label');
 });
 
-test('pocketCardHtml renders a progress bar at pctUsed percent', () => {
-  const html = pocketCardHtml(POCKET);
-  assert.ok(html.includes('width: 57.44%'), html);
+test('pocketRowHtml keeps cents for amounts under R10', () => {
+  assert.match(pocketRowHtml({ ...POCKET, balance: 2.5 }), /pb-pocket__left">R2\.50</);
 });
 
-test('pocketCardHtml clamps the progress width to 100 when pctUsed exceeds 100', () => {
-  const html = pocketCardHtml({ ...POCKET, limit: 100, balance: 0, spent: 143.2, pctUsed: 143.2 });
-  const widths = barWidths(html);
-  assert.deepEqual(widths, [100], `expected one clamped bar, got ${widths}`);
-  assert.ok(widths.every((w) => w >= 0 && w <= 100), 'bar overflowed its track');
-  assert.ok(html.includes('width: 100%'), html);
-  // aria-valuenow must not lie about the clamped geometry either.
-  assert.ok(html.includes('aria-valuenow="100"'), html);
-  // The honest number is still reported in the label: 143.2% used.
-  assert.ok(html.includes('143.2% used'), html);
+test('pocketRowHtml bar shows money left, not money used', () => {
+  const html = pocketRowHtml(POCKET);   // 340.5 of 800 left = 42.5625%
+  assert.ok(html.includes('width: 42.56%'), html);
+  assert.ok(html.includes('aria-valuenow="42.56"'), html);
 });
 
-test('pocketCardHtml clamps a negative pctUsed to zero rather than a negative bar', () => {
-  const html = pocketCardHtml({ ...POCKET, pctUsed: -12 });
+test('pocketRowHtml clamps the bar to the track when the balance exceeds the limit', () => {
+  const html = pocketRowHtml({ ...POCKET, limit: 100, balance: 143.2 });
+  assert.deepEqual(barWidths(html), [100], html);
+});
+
+test('pocketRowHtml clamps a negative balance to an empty bar', () => {
+  const html = pocketRowHtml({ ...POCKET, balance: -5 });
   assert.deepEqual(barWidths(html), [0], html);
   assert.doesNotMatch(html, /width: -/);
 });
 
-test('pocketCardHtml colours by threshold: emerald below 60', () => {
-  const html = pocketCardHtml({ ...POCKET, pctUsed: 59.9 });
-  assert.ok(html.includes('bg-emerald-500'), html);
-  assert.doesNotMatch(html, /bg-amber-500|bg-rose-500/);
+test('pocketRowHtml draws the pace tick where money left should be today', () => {
+  const html = pocketRowHtml(POCKET, PACE);
+  assert.match(html, /pb-pocket__tick[^>]*left: 77\.42%/, html);
 });
 
-test('pocketCardHtml colours exactly 60 as amber', () => {
-  const html = pocketCardHtml({ ...POCKET, pctUsed: 60 });
-  assert.ok(html.includes('bg-amber-500'), html);
-  assert.doesNotMatch(html, /bg-emerald-500|bg-rose-500/);
+test('pocketRowHtml draws no tick when pace is unknown', () => {
+  assert.doesNotMatch(pocketRowHtml(POCKET, null), /pb-pocket__tick/);
 });
 
-test('pocketCardHtml colours exactly 85 as amber', () => {
-  const html = pocketCardHtml({ ...POCKET, pctUsed: 85 });
-  assert.ok(html.includes('bg-amber-500'), html);
-  assert.doesNotMatch(html, /bg-emerald-500|bg-rose-500/);
+test('pocketRowHtml gives every non-ok status a word as well as a colour', () => {
+  assert.doesNotMatch(pocketRowHtml(spentPct(20), PACE), /pb-pocket__pill/);
+  assert.match(pocketRowHtml(spentPct(50), PACE), /Spending fast/);
+  assert.match(pocketRowHtml(spentPct(70), PACE), /Running low/);
+  assert.match(pocketRowHtml(spentPct(100, { balance: 0, isLocked: true }), PACE), /Depleted/);
 });
 
-test('pocketCardHtml colours 85.1 as rose', () => {
-  const html = pocketCardHtml({ ...POCKET, pctUsed: 85.1 });
-  assert.ok(html.includes('bg-rose-500'), html);
-  assert.doesNotMatch(html, /bg-emerald-500|bg-amber-500/);
+test('pocketRowHtml colours the fill by status', () => {
+  assert.ok(pocketRowHtml(spentPct(20), PACE).includes('bg-emerald-500'));
+  assert.ok(pocketRowHtml(spentPct(50), PACE).includes('bg-amber-500'));
+  assert.ok(pocketRowHtml(spentPct(70), PACE).includes('bg-rose-500'));
 });
 
-test('pocketCardHtml shows a percentage label via formatPct', () => {
-  assert.ok(pocketCardHtml({ ...POCKET, pctUsed: 57.44 }).includes('57.4%'));
-});
-
-test('pocketCardHtml on a locked pocket is rose, badged, and its affordance disabled', () => {
-  const html = pocketCardHtml({ ...POCKET, balance: 0, isLocked: true });
-  assert.ok(html.includes('bg-rose-500'), html);
-  assert.ok(/Depleted/.test(html), 'Depleted badge');
+test('pocketRowHtml on a locked pocket is disabled, tickless and empty', () => {
+  const html = pocketRowHtml({ ...POCKET, balance: 0, isLocked: true }, PACE);
   const [btn] = buttonTags(html);
-  assert.match(btn, DISABLED_ATTR, 'add/select affordance must carry the disabled attribute');
+  assert.match(btn, DISABLED_ATTR, 'row must carry the disabled attribute');
   assert.match(btn, /aria-disabled="true"/);
+  assert.ok(html.includes('bg-rose-500'));
+  assert.deepEqual(barWidths(html), [0]);
+  assert.doesNotMatch(html, /pb-pocket__tick/);
 });
 
-test('pocketCardHtml on an unlocked pocket leaves the affordance enabled', () => {
-  const html = pocketCardHtml(POCKET);
-  const [btn] = buttonTags(html);
+test('pocketRowHtml on an unlocked pocket is an enabled select-pocket target', () => {
+  const [btn] = buttonTags(pocketRowHtml(POCKET));
   assert.match(btn, /data-action="select-pocket"/);
   assert.match(btn, /data-pocket-id="P01"/);
-  assert.doesNotMatch(btn, DISABLED_ATTR,
-    'unlocked pocket must not render a disabled attribute');
+  assert.doesNotMatch(btn, DISABLED_ATTR, 'unlocked pocket must not render a disabled attribute');
   assert.doesNotMatch(btn, /aria-disabled/);
-  assert.doesNotMatch(html, /Depleted/);
 });
 
-test('pocketCardHtml survives a pocket with missing numeric fields', () => {
-  const html = pocketCardHtml({ id: 'P09', name: 'No Numbers' });
+test('pocketRowHtml survives a pocket with missing numeric fields', () => {
+  const html = pocketRowHtml({ id: 'P09', name: 'No Numbers' });
   assert.ok(html.includes('width: 0%'), html);
-  assert.ok(html.includes('R0.00'), html);
+  assert.match(html, /pb-pocket__left">R0</, html);
+});
+
+/* -------------------------------------------------------- pocket status -- */
+
+test('pocketStatus without pace only flags 85% used and locked pockets', () => {
+  assert.equal(pocketStatus(spentPct(84.9), null), 'ok');
+  assert.equal(pocketStatus(spentPct(85), null), 'risk');
+  assert.equal(pocketStatus(spentPct(100, { isLocked: true }), null), 'out');
+});
+
+test('pocketStatus compares spending to the calendar', () => {
+  // elapsed 22.58%: watch above 47.58% used, risk above 62.58%.
+  assert.equal(pocketStatus(spentPct(47), PACE), 'ok');
+  assert.equal(pocketStatus(spentPct(48), PACE), 'watch');
+  assert.equal(pocketStatus(spentPct(62), PACE), 'watch');
+  assert.equal(pocketStatus(spentPct(63), PACE), 'risk');
+});
+
+test('pocketStatus gives the same spend more room late in the month', () => {
+  const late = { day: 28, daysInMonth: 31, daysLeft: 3, elapsedPct: (28 / 31) * 100 };
+  assert.equal(pocketStatus(spentPct(70), late), 'ok');
+  assert.equal(pocketStatus(spentPct(70), PACE), 'risk');
+});
+
+test('pocketStatus treats a locked pocket as out whatever its pace', () => {
+  assert.equal(pocketStatus(spentPct(0, { isLocked: true }), PACE), 'out');
+});
+
+/* ---------------------------------------------------------- summary HTML -- */
+
+const SUMMARY = { totalBalance: 1100, totalLimit: 1500 };
+
+test('summaryHtml leads with money left, of the total, and the day of the month', () => {
+  const html = summaryHtml(SUMMARY, [], PACE);
+  assert.match(html, /pb-sum__left[^>]*>R1,100</);
+  assert.match(html, /of R1,500/);
+  assert.match(html, /Day 7 of 31/);
+  assert.ok(html.includes('width: 73.33%'), html);
+  assert.match(html, /pb-pocket__tick[^>]*left: 77\.42%/);
+});
+
+test('summaryHtml says on pace within five points of the calendar, ahead beyond it', () => {
+  assert.match(summaryHtml({ totalBalance: 790, totalLimit: 1000 }, [], PACE), /On pace\./);
+  assert.match(summaryHtml({ totalBalance: 700, totalLimit: 1000 }, [], PACE), /Spending ahead of pace\./);
+});
+
+test('summaryHtml counts the pockets that need a look', () => {
+  const pockets = [spentPct(10), spentPct(50), spentPct(70, { id: 'P3' })];
+  assert.match(summaryHtml(SUMMARY, pockets, PACE), /2 pockets need a look/);
+  assert.match(summaryHtml(SUMMARY, [pockets[1]], PACE), /1 pocket needs a look/);
+  assert.match(summaryHtml(SUMMARY, [pockets[0]], PACE), /All pockets on track/);
+});
+
+test('summaryHtml without pace drops the day line, the tick and the pace verdict', () => {
+  const html = summaryHtml(SUMMARY, [spentPct(10)], null);
+  assert.doesNotMatch(html, /Day \d|pb-pocket__tick|On pace|ahead of pace/);
+  assert.match(html, /All pockets on track/);
+});
+
+test('summaryHtml renders nothing when there is no limit to speak of', () => {
+  assert.equal(summaryHtml({ totalBalance: 0, totalLimit: 0 }, [], PACE), '');
+  assert.equal(summaryHtml(undefined, [], PACE), '');
+  assert.equal(summaryHtml({ totalBalance: 'x', totalLimit: 1500 }, [], PACE), '');
+});
+
+test('summaryHtml clamps the bar when the balance exceeds the limit', () => {
+  const html = summaryHtml({ totalBalance: 2000, totalLimit: 1500 }, [], PACE);
+  assert.ok(html.includes('width: 100%'), html);
 });
 
 /* ---------------------------------------------------- activity row HTML -- */
@@ -342,20 +419,111 @@ test('activityRowHtml omits the note line when the note is nullish', () => {
 
 /* ------------------------------------------------------------- mounting -- */
 
-test('renderPockets mounts every pocket card into the container', async () => {
+test('renderPockets mounts every pocket row into the container, in order', async () => {
   await withFakeDom(async (container) => {
     const second = { ...POCKET, id: 'P02', name: 'Dining Out' };
     renderPockets(container, [POCKET, second]);
 
     assert.equal(container.replaced, 1, 'container must be swapped in exactly once');
     const html = container.templateInner;
-    // A grid/layout wrapper around the cards is fine; the cards themselves
-    // must all be present, in order, and nothing else may be rendered.
-    assert.ok(html.includes(pocketCardHtml(POCKET)), 'first card missing');
-    assert.ok(html.includes(pocketCardHtml(second)), 'second card missing');
+    assert.ok(html.includes(pocketRowHtml(POCKET, null)), 'first row missing');
+    assert.ok(html.includes(pocketRowHtml(second, null)), 'second row missing');
     assert.ok(html.indexOf('data-pocket-id="P01"') < html.indexOf('data-pocket-id="P02"'),
-      'cards rendered out of order');
-    assert.equal((html.match(/<article\b/g) || []).length, 2, 'extra or missing cards');
+      'rows rendered out of order');
+    assert.equal((html.match(/<button\b/g) || []).length, 2, 'extra or missing rows');
+  });
+});
+
+/** Seven pockets on two accounts, so filter chips appear. */
+function manyPockets() {
+  return [
+    spentPct(10, { id: 'P1', name: 'Groceries', account: 'Les' }),
+    spentPct(70, { id: 'P2', name: 'Gifts', account: 'Ivan' }),
+    spentPct(10, { id: 'P3', name: 'Fuel', account: 'Ivan' }),
+    spentPct(10, { id: 'P4', name: 'Cars', account: 'Ivan' }),
+    spentPct(10, { id: 'P5', name: 'Gas', account: 'Ivan' }),
+    spentPct(100, { id: 'P6', name: 'Pet Care', account: 'Les', balance: 0, isLocked: true }),
+  ];
+}
+
+test('renderPockets shows no filter chips for a short list', async () => {
+  await withFakeDom(async (container) => {
+    renderPockets(container, [POCKET], { pace: PACE });
+    assert.doesNotMatch(container.templateInner, /filter-pockets/);
+  });
+});
+
+test('renderPockets shows All, Needs attention and one chip per account for a long list', async () => {
+  await withFakeDom(async (container) => {
+    renderPockets(container, manyPockets(), { pace: PACE });
+    const html = container.templateInner;
+    assert.match(html, /data-filter="all"[^>]*aria-pressed="true">All 6</);
+    assert.match(html, /data-filter="attention"[^>]*aria-pressed="false">Needs attention 2</);
+    assert.match(html, /data-filter="account:Les"[^>]*>Les 2</);
+    assert.match(html, /data-filter="account:Ivan"[^>]*>Ivan 4</);
+  });
+});
+
+test('renderPockets omits account chips when there is only one account', async () => {
+  await withFakeDom(async (container) => {
+    renderPockets(container, manyPockets().map((p) => ({ ...p, account: 'Joint' })), { pace: PACE });
+    assert.doesNotMatch(container.templateInner, /data-filter="account:/);
+  });
+});
+
+test('renderPockets applies the attention filter, keeping server order', async () => {
+  await withFakeDom(async (container) => {
+    const applied = renderPockets(container, manyPockets(), { pace: PACE, filter: 'attention' });
+    const html = container.templateInner;
+    assert.equal(applied, 'attention');
+    assert.match(html, /data-filter="attention"[^>]*aria-pressed="true"/);
+    assert.equal((html.match(/data-action="select-pocket"/g) || []).length, 2);
+    assert.ok(html.indexOf('data-pocket-id="P2"') < html.indexOf('data-pocket-id="P6"'));
+  });
+});
+
+test('renderPockets applies an account filter', async () => {
+  await withFakeDom(async (container) => {
+    renderPockets(container, manyPockets(), { pace: PACE, filter: 'account:Les' });
+    const html = container.templateInner;
+    assert.equal((html.match(/data-action="select-pocket"/g) || []).length, 2);
+    assert.ok(html.includes('data-pocket-id="P1"') && html.includes('data-pocket-id="P6"'));
+  });
+});
+
+test('renderPockets falls back to All when the filtered account no longer exists', async () => {
+  await withFakeDom(async (container) => {
+    const applied = renderPockets(container, manyPockets(), { pace: PACE, filter: 'account:Gone' });
+    assert.equal(applied, 'all');
+    assert.equal((container.templateInner.match(/data-action="select-pocket"/g) || []).length, 6);
+  });
+});
+
+test('renderPockets says so when nothing needs attention', async () => {
+  await withFakeDom(async (container) => {
+    const calm = manyPockets().map((p) => ({ ...p, ...spentPct(10), id: p.id, name: p.name, account: p.account }));
+    renderPockets(container, calm, { pace: PACE, filter: 'attention' });
+    assert.match(container.templateInner, /Nothing needs attention/);
+    assert.match(container.templateInner, /data-filter="attention"[^>]*aria-pressed="true"/);
+  });
+});
+
+test('renderPockets escapes an account name in the chips', async () => {
+  await withFakeDom(async (container) => {
+    const list = manyPockets();
+    list[0] = { ...list[0], account: '"><img src=x onerror=alert(3)>' };
+    renderPockets(container, list, { pace: PACE });
+    assert.doesNotMatch(container.templateInner, /<img/i);
+    assert.doesNotMatch(container.templateInner, liveAttr('onerror'));
+  });
+});
+
+test('renderSummary mounts the header, and clears it when there is nothing to show', async () => {
+  await withFakeDom(async (container) => {
+    renderSummary(container, SUMMARY, [], PACE);
+    assert.match(container.templateInner, /Left this month/);
+    renderSummary(container, { totalBalance: 0, totalLimit: 0 }, [], PACE);
+    assert.equal(container.templateInner, '');
   });
 });
 
@@ -429,6 +597,16 @@ test('renderActivity tolerates a missing transaction list', async () => {
 });
 
 test('renderers are inert when handed no container', () => {
-  assert.equal(renderPockets(null, [POCKET]), undefined);
+  // renderPockets reports the filter it applied, which is 'all' when nothing was drawn.
+  assert.equal(renderPockets(null, [POCKET]), 'all');
   assert.equal(renderActivity(undefined, [txn()]), undefined);
+});
+/* ------------------------------------- activity text is legible on the dark page -- */
+
+test('activityRowHtml uses light text for the note, meta and amount (the page is dark)', () => {
+  const html = activityRowHtml(txn(), { P01: 'Groceries' });
+  assert.match(html, /pb-row__note[^"]*text-slate-200/);
+  assert.match(html, /pb-row__meta[^"]*text-slate-400/);
+  assert.match(html, /pb-row__amount[^"]*text-slate-100/);
+  assert.doesNotMatch(html, /pb-row__(note|meta|amount)[^"]*text-slate-(500|600|700|800|900)/);
 });

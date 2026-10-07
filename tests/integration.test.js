@@ -19,9 +19,10 @@ const sw = readFileSync(join(APP, 'sw.js'), 'utf8');
 /** Every export name each module is contracted to provide. */
 const EXPECTED_EXPORTS = {
   'config.js': ['resolveEndpoint', 'makeConfig'],
-  'format.js': ['formatMoney', 'formatPct', 'isValidAmount', 'relativeDay'],
+  'format.js': ['formatMoney', 'formatPct', 'formatRand', 'monthProgress', 'isValidAmount', 'relativeDay'],
   'api.js': ['makeApi', 'ApiError'],
-  'render.js': ['esc', 'pocketCardHtml', 'activityRowHtml', 'renderPockets', 'renderActivity'],
+  'render.js': ['esc', 'pocketRowHtml', 'pocketStatus', 'summaryHtml', 'activityRowHtml',
+               'renderPockets', 'renderSummary', 'renderActivity'],
   'addform.js': ['mountAddForm'],
   'manage.js': ['mountManage'],
   'app.js': ['boot', 'showToast', 'switchView', 'isServerStale', 'registerServiceWorker',
