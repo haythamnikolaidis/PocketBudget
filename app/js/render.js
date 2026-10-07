@@ -1,5 +1,5 @@
 // app/js/render.js
-// Home feed renderer: pocket cards with progress bars, and the activity feed.
+// Home feed renderer: the summary header, pocket rows with pace bars, and the activity feed.
 //
 // ---------------------------------------------------------------------------
 // SECURITY — READ BEFORE EDITING
@@ -14,12 +14,12 @@
 // away because the data "usually" comes from our own backend or "the values
 // are already validated". There is no such guarantee. If you add a new field to
 // a template, esc() it. If you need a number formatted, pass it through
-// formatMoney/formatPct and still esc() the result. Do not hand this module raw
+// formatMoney/formatRand and still esc() the result. Do not hand this module raw
 // values to innerHTML either — mount() only ever parses strings that esc() has
 // already had its way with.
 // ---------------------------------------------------------------------------
 
-import { formatMoney, formatPct, relativeDay } from './format.js';
+import { formatMoney, formatRand, relativeDay } from './format.js';
 
 /** & must be replaced first or the entities we emit would be re-escaped. */
 const ESCAPES = {
@@ -52,63 +52,159 @@ function barWidth(pct) {
   return String(Math.round(clamped * 100) / 100);
 }
 
-/** <60% on track (emerald), 60–85% warning (amber), >85% over (rose). */
-function toneClass(pct, locked) {
-  if (locked || pct > 85) return 'bg-rose-500';
-  if (pct >= 60) return 'bg-amber-500';
-  return 'bg-emerald-500';
-}
-
-/* ------------------------------------------------------------ pocket card -- */
+/* ------------------------------------------------------- status and pace -- */
 
 /**
- * One pocket card: name, bank account, balance of limit, a clamped progress
- * bar coloured by threshold, and a select affordance for the add screen.
- *
- * A locked (depleted) pocket renders rose, carries a "Depleted" badge, and its
- * affordance is disabled — the UI states the rule before the user can discover
- * it the hard way through a server error.
+ * Spending-pace thresholds, in percentage points of the limit ahead of the
+ * calendar. A pocket 25 points ahead of the month is "Spending fast"; 40 points
+ * ahead, or 85% used, is "Running low". Early-month spending is lumpy (a bill
+ * lands on the 1st), so these are deliberately loose.
  */
-export function pocketCardHtml(p) {
+const FAST_AHEAD = 25;
+const LOW_AHEAD = 40;
+const LOW_USED = 85;
+/** The month as a whole counts as "ahead of pace" once this many points ahead. */
+const MONTH_AHEAD = 5;
+
+const STATUS_LABEL = { watch: 'Spending fast', risk: 'Running low', out: 'Depleted' };
+const FILL_CLASS = { ok: 'bg-emerald-500', watch: 'bg-amber-500', risk: 'bg-rose-500', out: 'bg-rose-500' };
+const PILL_CLASS = {
+  watch: 'bg-amber-500/15 text-amber-200',
+  risk: 'bg-rose-500/15 text-rose-300',
+  out: 'border border-rose-500/50 text-rose-300',
+};
+
+/**
+ * 'out' (locked) | 'risk' | 'watch' | 'ok'. `pace` is monthProgress()'s result,
+ * or null when the month is unknown: then only the plain 85%-used rule applies.
+ */
+export function pocketStatus(p, pace) {
   const pocket = p || {};
-  const pct = num(pocket.pctUsed);
-  const locked = pocket.isLocked === true;
+  if (pocket.isLocked === true) return 'out';
+  const used = num(pocket.pctUsed);
+  if (used >= LOW_USED) return 'risk';
+  if (pace && Number.isFinite(pace.elapsedPct)) {
+    if (used > pace.elapsedPct + LOW_AHEAD) return 'risk';
+    if (used > pace.elapsedPct + FAST_AHEAD) return 'watch';
+  }
+  return 'ok';
+}
+
+/** Share of the limit still unspent, clamped to [0, 100]. */
+function leftPct(pocket) {
+  const limit = num(pocket.limit);
+  return limit > 0 ? Math.max(0, Math.min(100, (num(pocket.balance) / limit) * 100)) : 0;
+}
+
+function statusPill(status) {
+  return status === 'ok'
+    ? ''
+    : `<span class="pb-pocket__pill shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${PILL_CLASS[status]}">` +
+      `${STATUS_LABEL[status]}</span>`;
+}
+
+/**
+ * A progress bar that shows money LEFT, not money used, with a tick at the
+ * share that should be left today. Fill past the tick: ahead of the month.
+ */
+function barHtml(pct, status, pace, label, heightClass) {
   const width = barWidth(pct);
-  const tone = toneClass(pct, locked);
+  const tick = pace && Number.isFinite(pace.elapsedPct)
+    ? `<span class="pb-pocket__tick absolute -bottom-1 -top-1 -ml-px w-0.5 rounded-sm bg-slate-100/80"` +
+      ` style="left: ${barWidth(100 - pace.elapsedPct)}%"></span>`
+    : '';
+  return (
+    `<span class="pb-pocket__bar relative col-span-2 block ${heightClass} w-full rounded-full bg-slate-700" role="progressbar"` +
+    ` aria-valuemin="0" aria-valuemax="100" aria-valuenow="${width}" aria-label="${esc(label)}">` +
+    `<span class="pb-pocket__fill ${FILL_CLASS[status]} absolute inset-y-0 left-0 block rounded-full" style="width: ${width}%"></span>` +
+    `${tick}</span>`
+  );
+}
+
+/* ----------------------------------------------------------- pocket row -- */
+
+/**
+ * One pocket row: name, account, amount LEFT of the limit, and a bar of money
+ * left with a pace tick. The whole row is the "add an expense here" target; it
+ * only opens the add form, so a stray tap never writes anything.
+ *
+ * A depleted pocket carries a "Depleted" pill, an empty bar, and a disabled row —
+ * the UI states the rule before the user can discover it through a server error.
+ * Colour is never the only signal: every non-ok status also has a word.
+ */
+export function pocketRowHtml(p, pace = null) {
+  const pocket = p || {};
+  const status = pocketStatus(pocket, pace);
+  const locked = status === 'out';
   const id = esc(pocket.id);
   const account = String(pocket.account ?? '').trim();
-
-  const accountLine = account
-    ? `<p class="pb-card__account text-sm text-slate-500">${esc(account)}</p>`
-    : '';
-
-  const badge = locked
-    ? `<span class="pb-card__badge ml-2 shrink-0 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">Depleted</span>`
-    : '';
-
+  const name = String(pocket.name ?? '');
+  const pct = leftPct(pocket);
   const disabled = locked ? ' disabled aria-disabled="true"' : '';
+  const label = locked
+    ? `Add expense to ${name}, depleted`
+    : `Add expense to ${name}, ${formatMoney(pocket.balance)} left of ${formatMoney(pocket.limit)}` +
+      (status === 'ok' ? '' : `, ${STATUS_LABEL[status].toLowerCase()}`);
+
+  const accountTag = account
+    ? `<span class="pb-pocket__account shrink-0 text-xs text-slate-400">${esc(account)}</span>`
+    : '';
 
   return (
-    `<article class="pb-card rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-pocket-id="${id}">` +
-    `<header class="flex items-start justify-between gap-2">` +
+    `<button type="button" class="pb-pocket grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2` +
+    ` border-b border-slate-800 py-3 text-left disabled:cursor-not-allowed"` +
+    ` data-action="select-pocket" data-pocket-id="${id}" data-status="${status}"` +
+    ` data-account="${esc(account)}" aria-label="${esc(label)}"${disabled}>` +
+    `<span class="flex min-w-0 items-center gap-2">` +
+    `<span class="pb-pocket__name truncate text-[15px] font-semibold text-slate-100">${esc(name)}</span>` +
+    `${accountTag}${statusPill(status)}</span>` +
+    `<span class="pb-pocket__amount whitespace-nowrap text-right font-bold tabular-nums text-slate-100">` +
+    `<span class="pb-pocket__left">${esc(formatRand(pocket.balance))}</span>` +
+    ` <span class="pb-pocket__limit text-xs font-normal text-slate-400">/ ${esc(formatRand(pocket.limit))}</span></span>` +
+    barHtml(pct, status, locked ? null : pace, `${name} money left`, 'h-1.5') +
+    `</button>`
+  );
+}
+
+/* ------------------------------------------------------------- summary -- */
+
+/**
+ * The dashboard header: money left this month, of the total limit, the day of
+ * the month, an overall bar with the pace tick, and one plain-language verdict.
+ * Returns '' when there is no limit to speak of (no pockets yet).
+ *
+ * `summary` is the payload's { totalBalance, totalLimit }; `pockets` supplies
+ * the "needs a look" count; `pace` is monthProgress()'s result or null.
+ */
+export function summaryHtml(summary, pockets, pace = null) {
+  const s = summary || {};
+  const list = Array.isArray(pockets) ? pockets : [];
+  const balance = Number(s.totalBalance);
+  const limit = Number(s.totalLimit);
+  if (!Number.isFinite(balance) || !Number.isFinite(limit) || limit <= 0) return '';
+
+  const pct = Math.max(0, Math.min(100, (balance / limit) * 100));
+  const attention = list.filter((p) => pocketStatus(p, pace) !== 'ok').length;
+
+  const needs = attention === 0
+    ? 'All pockets on track'
+    : `${attention} ${attention === 1 ? 'pocket needs' : 'pockets need'} a look`;
+  const ahead = pace && Number.isFinite(pace.elapsedPct) && (100 - pct) > pace.elapsedPct + MONTH_AHEAD;
+  const verdict = pace
+    ? `<strong class="font-semibold text-slate-100">${ahead ? 'Spending ahead of pace' : 'On pace'}.</strong> ${esc(needs)}`
+    : `<strong class="font-semibold text-slate-100">${esc(needs)}</strong>`;
+  const status = ahead ? 'watch' : 'ok';
+  const dayLine = pace ? `<br>Day ${esc(pace.day)} of ${esc(pace.daysInMonth)}` : '';
+
+  return (
+    `<div class="pb-sum grid grid-cols-2 gap-x-3 gap-y-2">` +
     `<div class="min-w-0">` +
-    `<h3 class="pb-card__name truncate text-base font-semibold text-slate-900">${esc(pocket.name)}</h3>` +
-    accountLine +
-    `</div>${badge}</header>` +
-    `<p class="pb-card__amount mt-2 text-lg font-semibold tabular-nums text-slate-900">` +
-    `<span class="pb-card__num">${esc(formatMoney(pocket.balance))}</span> of ` +
-    `<span class="pb-card__num">${esc(formatMoney(pocket.limit))}</span></p>` +
-    `<div class="pb-card__bar mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200" role="progressbar"` +
-    ` aria-valuemin="0" aria-valuemax="100" aria-valuenow="${width}"` +
-    ` aria-label="${esc(pocket.name)} used">` +
-    `<div class="pb-card__fill ${tone} h-full rounded-full" style="width: ${width}%"></div></div>` +
-    `<footer class="mt-3 flex items-center justify-between gap-2">` +
-    `<span class="pb-card__pct text-xs font-medium text-slate-500">${esc(formatPct(pct))} used</span>` +
-    `<button type="button" class="pb-card__add rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold` +
-    ` text-white disabled:cursor-not-allowed disabled:bg-slate-300"` +
-    ` data-action="select-pocket" data-pocket-id="${id}"${disabled}>Add expense</button>` +
-    `</footer>` +
-    `</article>`
+    `<p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Left this month</p>` +
+    `<p class="pb-sum__left text-3xl font-extrabold tabular-nums text-slate-100">${esc(formatRand(balance))}</p></div>` +
+    `<p class="pb-sum__of self-end text-right text-xs tabular-nums text-slate-400">of ${esc(formatRand(limit))}${dayLine}</p>` +
+    barHtml(pct, status, pace, 'Budget left this month', 'h-2') +
+    `<p class="pb-sum__verdict col-span-2 text-xs text-slate-400">${verdict}</p>` +
+    `</div>`
   );
 }
 
@@ -185,16 +281,88 @@ function mount(container, html) {
   container.appendChild(nodes);
 }
 
-/** Horizontal list of pocket cards, or an empty state. */
-export function renderPockets(container, pockets) {
+/** The dashboard header (see summaryHtml). Clears the container when there is nothing to show. */
+export function renderSummary(container, summary, pockets, pace = null) {
+  mount(container, summaryHtml(summary, pockets, pace));
+}
+
+/** Only worth the screen space once the list is long enough to scan. */
+const CHIPS_FROM = 6;
+
+function accountsOf(list) {
+  const seen = [];
+  for (const p of list) {
+    const a = String((p && p.account) ?? '').trim();
+    if (a && !seen.includes(a)) seen.push(a);
+  }
+  return seen;
+}
+
+function chipHtml(value, text, count, active) {
+  const tone = active
+    ? 'border-slate-100 bg-slate-100 text-slate-900'
+    : 'border-slate-700 text-slate-300';
+  return (
+    `<button type="button" class="pb-chip shrink-0 rounded-full border px-3 py-1 text-xs font-semibold ${tone}"` +
+    ` data-action="filter-pockets" data-filter="${esc(value)}" aria-pressed="${active ? 'true' : 'false'}">` +
+    `${esc(text)} ${esc(count)}</button>`
+  );
+}
+
+/** Does `p` belong under the filter 'all' | 'attention' | 'account:<name>'? */
+function inFilter(p, filter, pace) {
+  if (filter === 'all') return true;
+  if (filter === 'attention') return pocketStatus(p, pace) !== 'ok';
+  return String((p && p.account) ?? '').trim() === filter.slice('account:'.length);
+}
+
+/**
+ * The pocket list: filter chips (for longer lists), then one row per pocket in
+ * the order the server sent them, so a pocket never moves under your thumb.
+ *
+ * `opts.filter` is 'all' | 'attention' | 'account:<name>'; one that no longer
+ * matches anything (the account was renamed away) falls back to 'all'.
+ * Returns the filter that was actually applied.
+ */
+export function renderPockets(container, pockets, opts = {}) {
   const list = Array.isArray(pockets) ? pockets : [];
+  const pace = (opts && opts.pace) || null;
   if (list.length === 0) {
     mount(container, `<p class="pb-empty px-4 py-8 text-center text-sm text-slate-500">` +
       `No pockets yet. Add one to get started.</p>`);
-    return;
+    return 'all';
   }
-  mount(container, `<div class="pb-grid grid gap-3 sm:grid-cols-2">` +
-    list.map(pocketCardHtml).join('') + `</div>`);
+
+  const accounts = accountsOf(list);
+  const attention = list.filter((p) => pocketStatus(p, pace) !== 'ok').length;
+  const showChips = list.length >= CHIPS_FROM;
+  const wanted = String((opts && opts.filter) || 'all');
+  const valid = wanted === 'all' || wanted === 'attention'
+    || (wanted.startsWith('account:') && accounts.includes(wanted.slice('account:'.length)));
+  const filter = showChips && valid ? wanted : 'all';
+
+  let chips = '';
+  if (showChips) {
+    const items = [chipHtml('all', 'All', list.length, filter === 'all'),
+      chipHtml('attention', 'Needs attention', attention, filter === 'attention')];
+    if (accounts.length > 1) {
+      for (const a of accounts) {
+        const value = 'account:' + a;
+        const n = list.filter((p) => inFilter(p, value, pace)).length;
+        items.push(chipHtml(value, a, n, filter === value));
+      }
+    }
+    chips = `<div class="pb-filters mb-1 flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Filter pockets">` +
+      items.join('') + `</div>`;
+  }
+
+  const shown = list.filter((p) => inFilter(p, filter, pace));
+  const body = shown.length > 0
+    ? shown.map((p) => pocketRowHtml(p, pace)).join('')
+    : `<p class="pb-empty px-4 py-8 text-center text-sm text-slate-500">Nothing needs attention.</p>`;
+
+  mount(container, chips + `<div class="pb-list flex flex-col">` + body + `</div>`);
+  return filter;
 }
 
 /**

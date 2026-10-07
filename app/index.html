@@ -90,15 +90,15 @@
 
     <!-- ------------------------------------------------------------- home feed -->
     <section id="view-home" class="hidden" aria-labelledby="home-heading">
-      <header class="flex items-baseline justify-between">
-        <h1 id="home-heading" class="text-2xl font-semibold">Pockets</h1>
-        <p id="home-summary" class="text-sm text-slate-400"></p>
-      </header>
+      <h1 id="home-heading" class="text-2xl font-semibold">Pockets</h1>
+
+      <!-- Dashboard header: money left this month, pace and a one-line verdict (render.js). -->
+      <div id="home-summary" class="mt-3"></div>
 
       <!-- Cached-state banner: never present a stale balance as if it were current. -->
       <p id="stale-banner" class="mt-3 hidden rounded-lg bg-amber-500/15 px-3 py-2 text-xs text-amber-200"></p>
 
-      <div id="pockets" class="mt-4 space-y-3"></div>
+      <div id="pockets" class="mt-4"></div>
 
       <h2 class="mt-8 text-sm font-semibold uppercase tracking-wide text-slate-400">Recent activity</h2>
       <div id="activity" class="mt-2 space-y-1"></div>

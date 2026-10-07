@@ -25,8 +25,8 @@
 
 import { config as defaultConfig, makeConfig } from './config.js';
 import { makeApi } from './api.js';
-import { formatMoney } from './format.js';
-import { renderPockets, renderActivity } from './render.js';
+import { formatMoney, monthProgress } from './format.js';
+import { renderPockets, renderSummary, renderActivity } from './render.js';
 import { mountAddForm, updateAddFormState } from './addform.js';
 import { mountManage, updateManageState } from './manage.js';
 
@@ -523,23 +523,31 @@ export function boot(deps = {}) {
     return 'Could not load your budgets. ' + why + ' Tap to retry.';
   }
 
-  /** Paint the summary line and both feeds from a getState payload. */
+  /**
+   * Which slice of the pocket list is showing: 'all', 'attention' or
+   * 'account:<name>'. Survives refreshes, so the list does not snap back to "All"
+   * every time you return to the app.
+   */
+  let pocketFilter = 'all';
+
+  /** Paint the summary header and the pocket list from a getState payload. */
+  function paintPockets(payload) {
+    const pockets = Array.isArray(payload.pockets) ? payload.pockets : [];
+    // Pace only means something for the month the payload describes; a stale
+    // cached payload from last month gets plain thresholds and no tick.
+    const pace = monthProgress(new Date(), payload.month);
+    pocketFilter = renderPockets(els.pockets, pockets, { pace, filter: pocketFilter });
+    renderSummary(els.homeSummary, payload.summary, pockets, pace);
+  }
+
+  /** Paint the summary, pocket list and activity feed from a getState payload. */
   function renderState(state) {
     const payload = state || {};
     const pockets = Array.isArray(payload.pockets) ? payload.pockets : [];
     const transactions = Array.isArray(payload.transactions) ? payload.transactions : [];
 
-    renderPockets(els.pockets, pockets);
+    paintPockets(payload);
     renderActivity(els.activity, transactions, pocketNames(pockets));
-
-    if (els.homeSummary) {
-      const summary = payload.summary || {};
-      const balance = Number(summary.totalBalance);
-      const limit = Number(summary.totalLimit);
-      els.homeSummary.textContent = Number.isFinite(balance) && Number.isFinite(limit) && limit > 0
-        ? `${Math.round((balance / limit) * 1000) / 10}% of ${formatMoney(limit)} left`
-        : '';
-    }
   }
 
   function pocketNames(pockets) {
@@ -943,12 +951,22 @@ on(els.setupCancel, 'click', () => {
       }));
   });
 
-  // "Add expense" on a pocket card: jump to the add form with that pocket chosen.
-  // (The button was rendered but nothing listened to it.)
+  // Tapping a pocket row: jump to the add form with that pocket chosen.
+  // (The card button used to render with nothing listening to it.)
   on(els.pockets, 'click', (ev) => {
-    const btn = ev && ev.target && typeof ev.target.closest === 'function'
-      ? ev.target.closest('[data-action="select-pocket"]')
-      : null;
+    const target = ev && ev.target && typeof ev.target.closest === 'function' ? ev.target : null;
+
+    // Filter chips: narrow the list in place; nothing is fetched.
+    const chip = target ? target.closest('[data-action="filter-pockets"]') : null;
+    if (chip) {
+      const value = (chip.dataset && chip.dataset.filter)
+        || (chip.getAttribute && chip.getAttribute('data-filter')) || 'all';
+      pocketFilter = String(value);
+      if (lastState) paintPockets(lastState);
+      return;
+    }
+
+    const btn = target ? target.closest('[data-action="select-pocket"]') : null;
     if (!btn || btn.disabled) return;
     const dataset = btn.dataset || {};
     const id = dataset.pocketId || (btn.getAttribute && btn.getAttribute('data-pocket-id'));

@@ -52,6 +52,18 @@ export function formatMoney(dollars) {
   return (neg ? '-' : '') + CURRENCY_SYMBOL + withCommas + '.' + cents;
 }
 
+/**
+ * Rand for dense lists: whole rands ('R1,200'), rounded DOWN so a balance is never
+ * overstated ('R340.50' shows as 'R340'). Amounts under R10 keep their cents
+ * ('R2.50') so a nearly-empty pocket never rounds to a misleading 'R0'; exactly zero is 'R0'.
+ */
+export function formatRand(dollars) {
+  const n = Number(dollars) || 0;
+  if (n === 0) return CURRENCY_SYMBOL + '0';
+  if (Math.abs(n) < 10) return formatMoney(n);
+  return formatMoney(Math.floor(n + 1e-9)).replace(/\.00$/, '');
+}
+
 export function formatPct(pct) {
   const n = Number(pct) || 0;
   if (n === 0) return '0%';
@@ -65,6 +77,22 @@ export function isValidAmount(input) {
   if (n < 0) return false;
   if (Math.abs(n * 100 - Math.round(n * 100)) > 1e-9) return false;
   return n > 0;
+}
+
+/**
+ * How far through the month `now` is, on the viewer's own calendar:
+ * `{ day, daysInMonth, daysLeft, elapsedPct }`, or null when `month` ('YYYY-MM',
+ * the month the state payload describes) is not the current one. A stale cached
+ * payload from last month has no meaningful pace, so callers just skip it.
+ */
+export function monthProgress(now = new Date(), month) {
+  const year = now.getFullYear();
+  const m = now.getMonth() + 1;
+  const key = year + '-' + String(m).padStart(2, '0');
+  if (month !== undefined && month !== null && String(month) !== key) return null;
+  const daysInMonth = new Date(year, m, 0).getDate();
+  const day = now.getDate();
+  return { day, daysInMonth, daysLeft: daysInMonth - day, elapsedPct: (day / daysInMonth) * 100 };
 }
 
 /** 'Today' | 'Yesterday' | 'Sep 28' */

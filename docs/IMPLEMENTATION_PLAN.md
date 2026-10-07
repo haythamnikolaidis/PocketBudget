@@ -238,6 +238,7 @@ the client always has one thing to check.
 | "Google OAuth / App Script permissions, **or** shared secret token" | Shared secret token only in v1 | Owner decision (brief §5). Upgrade path in §9. |
 | "Recent Activity Feed: latest 10 transactions" | Server returns the last 10; client refetches state after every write | Keeps both spouses in sync with no polling. |
 | Pocket columns as shown | `Status` is enforced as `Active`/`Archived`; archived pockets are hidden but retained | Already in the brief's table; transactions still reference them. |
+| Home screen is a card grid (Task 16: `pocketCardHtml`) | Dashboard header plus a one-line-per-pocket ledger (`pocketRowHtml`, `summaryHtml`): amount left, a bar of money left with a pace tick, status pills, filter chips from 6 pockets | 20 cards took 2–3 screens and hid the number that matters (what is left). Pace is computed client-side from the device date; see `render.js`. |
 
 ---
 

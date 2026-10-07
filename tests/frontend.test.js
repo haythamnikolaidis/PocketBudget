@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeConfig, resolveEndpoint } from '../app/js/config.js';
-import { formatMoney, formatPct, isValidAmount, relativeDay, parseAmountText, normaliseAmountText, balanceAfterLimitChange } from '../app/js/format.js';
+import { formatMoney, formatPct, formatRand, monthProgress, isValidAmount, relativeDay, parseAmountText, normaliseAmountText, balanceAfterLimitChange } from '../app/js/format.js';
 
 test('makeConfig stores the endpoint and token', () => {
   const cfg = makeConfig();
@@ -44,6 +44,39 @@ test('formatMoney renders dollars with cents', () => {
   assert.equal(formatMoney(0), 'R0.00');
   assert.equal(formatMoney(1234.5), 'R1,234.50');
   assert.equal(formatMoney(65), 'R65.00');
+});
+
+test('formatRand shows whole rands, rounded down so a balance is never overstated', () => {
+  assert.equal(formatRand(1200), 'R1,200');
+  assert.equal(formatRand(340.5), 'R340');
+  assert.equal(formatRand(4499.99), 'R4,499');
+  assert.equal(formatRand(10), 'R10');
+  assert.equal(formatRand(0), 'R0');
+  assert.equal(formatRand('x'), 'R0');
+});
+
+test('formatRand keeps cents under R10 so a nearly-empty pocket is not shown as R0', () => {
+  assert.equal(formatRand(2.5), 'R2.50');
+  assert.equal(formatRand(0.4), 'R0.40');
+  assert.equal(formatRand(9.99), 'R9.99');
+});
+
+test('monthProgress reports the day, the days left and the share of the month elapsed', () => {
+  const p = monthProgress(new Date(2026, 9, 7, 15, 0), '2026-10');
+  assert.deepEqual({ day: p.day, daysInMonth: p.daysInMonth, daysLeft: p.daysLeft }, { day: 7, daysInMonth: 31, daysLeft: 24 });
+  assert.ok(Math.abs(p.elapsedPct - 22.5806) < 1e-3, String(p.elapsedPct));
+});
+
+test('monthProgress knows a short month and a leap February', () => {
+  assert.equal(monthProgress(new Date(2026, 1, 28), '2026-02').daysInMonth, 28);
+  assert.equal(monthProgress(new Date(2028, 1, 15), '2028-02').daysInMonth, 29);
+  assert.equal(monthProgress(new Date(2026, 1, 28), '2026-02').daysLeft, 0);
+});
+
+test('monthProgress is null when the payload is from another month, and works without one', () => {
+  assert.equal(monthProgress(new Date(2026, 9, 7), '2026-09'), null);
+  assert.equal(monthProgress(new Date(2026, 9, 7), '2026-11'), null);
+  assert.equal(monthProgress(new Date(2026, 9, 7)).day, 7);
 });
 
 test('formatPct renders one decimal, guarding zero', () => {

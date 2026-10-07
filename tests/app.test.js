@@ -1384,11 +1384,68 @@ test('Change connection opens setup; Cancel returns to the feed and refetches', 
   handle.teardown();
 });
 
-test('the home summary is written in rand', async () => {
+test('the home summary leads with money left, in whole rand', async () => {
   const h = makeHarness();
-  const handle = await bootIn(h, { config: configuredConfig(), api: fakeApi() });
+  // A month that is never the current one: no pace, so the result cannot depend on today's date.
+  const handle = await bootIn(h, { config: configuredConfig(), api: fakeApi({ state: { ...STATE, month: '2000-01' } }) });
   await handle.ready;
-  assert.match(h.byId.get('home-summary').textContent, /^37% of R920\.00 left$/);
+  const html = h.byId.get('home-summary').innerHTML;
+  assert.match(html, /Left this month/);
+  assert.match(html, /pb-sum__left[^>]*>R340</, 'balance, rounded down');
+  assert.match(html, /of R920/);
+  assert.match(html, /1 pocket needs a look/, 'the locked pocket needs a look');
+  handle.teardown();
+});
+
+/** Six pockets (so filter chips show), whose status does not depend on today's date. */
+function sixPocketState() {
+  const mk = (id, name, account, pctUsed, isLocked = false) => ({
+    id, name, account, limit: 100, balance: isLocked ? 0 : 100 - pctUsed, spent: pctUsed, pctUsed, isLocked,
+  });
+  return {
+    ...STATE,
+    pockets: [
+      mk('P1', 'Groceries', 'Les', 10), mk('P2', 'Fuel', 'Ivan', 10), mk('P3', 'Gifts', 'Ivan', 90),
+      mk('P4', 'Cars', 'Ivan', 10), mk('P5', 'Gas', 'Ivan', 100, true), mk('P6', 'Pets', 'Les', 10),
+    ],
+    summary: { ...STATE.summary, totalLimit: 600, totalBalance: 400 },
+  };
+}
+
+function chipButton(h, filter) {
+  const btn = makeEl('', 'button');
+  btn.setAttribute('data-action', 'filter-pockets');
+  btn.setAttribute('data-filter', filter);
+  h.byId.get('pockets').appendChild(btn);
+  return btn;
+}
+
+const rowCount = (html) => (html.match(/data-action="select-pocket"/g) || []).length;
+
+test('a filter chip narrows the pocket list without refetching, and the choice survives a refresh', async () => {
+  const h = makeHarness();
+  const api = fakeApi({ state: sixPocketState() });
+  const handle = await bootIn(h, { config: configuredConfig(), api });
+  await handle.ready;
+  const pockets = h.byId.get('pockets');
+  assert.equal(rowCount(pockets.innerHTML), 6);
+  const fetched = api.calls.getState;
+
+  pockets.dispatch('click', { target: chipButton(h, 'attention') });
+  assert.equal(rowCount(pockets.innerHTML), 2, 'only Gifts and Gas need attention');
+  assert.equal(api.calls.getState, fetched, 'filtering must not hit the network');
+
+  await handle.refresh({ fresh: true });
+  assert.equal(rowCount(pockets.innerHTML), 2, 'the filter outlives a refresh');
+  assert.match(pockets.innerHTML, /data-filter="attention"[^>]*aria-pressed="true"/);
+
+  pockets.dispatch('click', { target: chipButton(h, 'account:Les') });
+  assert.equal(rowCount(pockets.innerHTML), 2);
+  assert.match(pockets.innerHTML, /Groceries/);
+  assert.doesNotMatch(pockets.innerHTML, /Gifts/);
+
+  pockets.dispatch('click', { target: chipButton(h, 'all') });
+  assert.equal(rowCount(pockets.innerHTML), 6);
   handle.teardown();
 });
 
@@ -1454,7 +1511,7 @@ test('plain refreshes still coalesce into one request', async () => {
   handle.teardown();
 });
 
-/* ------------------------------------ the pocket card's Add expense button -- */
+/* ------------------------------------- tapping a pocket row opens Add expense -- */
 
 function cardButton(h, pocketId, { disabled = false } = {}) {
   const btn = makeEl('', 'button');
@@ -1465,7 +1522,7 @@ function cardButton(h, pocketId, { disabled = false } = {}) {
   return btn;
 }
 
-test('"Add expense" on a pocket card opens the add form with that pocket selected', async () => {
+test('tapping a pocket row opens the add form with that pocket selected', async () => {
   const h = makeHarness();
   const handle = await bootIn(h, { config: configuredConfig(), api: fakeApi() });
   await handle.ready;
@@ -1479,7 +1536,7 @@ test('"Add expense" on a pocket card opens the add form with that pocket selecte
   handle.teardown();
 });
 
-test('a depleted pocket\'s card button does nothing', async () => {
+test('a depleted pocket\'s row does nothing', async () => {
   const h = makeHarness();
   const handle = await bootIn(h, { config: configuredConfig(), api: fakeApi() });
   await handle.ready;
