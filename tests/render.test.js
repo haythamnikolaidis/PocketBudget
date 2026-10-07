@@ -11,6 +11,7 @@ import {
   pocketRowHtml,
   pocketStatus,
   summaryHtml,
+  dayLabel,
   renderSummary,
   activityRowHtml,
   renderPockets,
@@ -286,13 +287,21 @@ test('pocketStatus treats a locked pocket as out whatever its pace', () => {
 
 const SUMMARY = { totalBalance: 1100, totalLimit: 1500 };
 
-test('summaryHtml leads with money left, of the total, and the day of the month', () => {
+test('summaryHtml shows a ring of the budget left beside money left and the total', () => {
   const html = summaryHtml(SUMMARY, [], PACE);
   assert.match(html, /pb-sum__left[^>]*>R1,100</);
-  assert.match(html, /of R1,500/);
-  assert.match(html, /Day 7 of 31/);
-  assert.ok(html.includes('width: 73.33%'), html);
-  assert.match(html, /pb-pocket__tick[^>]*left: 77\.42%/);
+  assert.match(html, /pb-sum__of[^>]*>of R1,500</);
+  assert.match(html, /Left this month/);
+  assert.match(html, /<svg[^>]*role="img"[^>]*aria-label="73 percent of the budget left, marker at 77 percent expected"/);
+  assert.match(html, /<text[^>]*>73%<\/text>/);
+  assert.match(html, /stroke-dasharray="165\.9 226\.2"/, 'arc is 73.33% of the circumference');
+  assert.match(html, /<line[^>]*rotate\(278\.7 48 48\)/, 'marker sits where 77.4% should be left');
+  assert.doesNotMatch(html, /Day \d/, 'the day lives on the title line, not in the header block');
+});
+
+test('dayLabel names the day of the month, and is empty without pace', () => {
+  assert.equal(dayLabel(PACE), 'Day 7 of 31');
+  assert.equal(dayLabel(null), '');
 });
 
 test('summaryHtml says on pace within five points of the calendar, ahead beyond it', () => {
@@ -307,9 +316,9 @@ test('summaryHtml counts the pockets that need a look', () => {
   assert.match(summaryHtml(SUMMARY, [pockets[0]], PACE), /All pockets on track/);
 });
 
-test('summaryHtml without pace drops the day line, the tick and the pace verdict', () => {
+test('summaryHtml without pace drops the marker and the pace verdict', () => {
   const html = summaryHtml(SUMMARY, [spentPct(10)], null);
-  assert.doesNotMatch(html, /Day \d|pb-pocket__tick|On pace|ahead of pace/);
+  assert.doesNotMatch(html, /<line|marker|On pace|ahead of pace/);
   assert.match(html, /All pockets on track/);
 });
 
@@ -319,9 +328,10 @@ test('summaryHtml renders nothing when there is no limit to speak of', () => {
   assert.equal(summaryHtml({ totalBalance: 'x', totalLimit: 1500 }, [], PACE), '');
 });
 
-test('summaryHtml clamps the bar when the balance exceeds the limit', () => {
+test('summaryHtml clamps the ring when the balance exceeds the limit', () => {
   const html = summaryHtml({ totalBalance: 2000, totalLimit: 1500 }, [], PACE);
-  assert.ok(html.includes('width: 100%'), html);
+  assert.match(html, /stroke-dasharray="226\.2 226\.2"/);
+  assert.match(html, />100%<\/text>/);
 });
 
 /* ---------------------------------------------------- activity row HTML -- */

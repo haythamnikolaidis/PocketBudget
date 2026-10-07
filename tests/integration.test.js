@@ -21,7 +21,7 @@ const EXPECTED_EXPORTS = {
   'config.js': ['resolveEndpoint', 'makeConfig'],
   'format.js': ['formatMoney', 'formatPct', 'formatRand', 'monthProgress', 'isValidAmount', 'relativeDay'],
   'api.js': ['makeApi', 'ApiError'],
-  'render.js': ['esc', 'pocketRowHtml', 'pocketStatus', 'summaryHtml', 'activityRowHtml',
+  'render.js': ['esc', 'pocketRowHtml', 'pocketStatus', 'summaryHtml', 'dayLabel', 'activityRowHtml',
                'renderPockets', 'renderSummary', 'renderActivity'],
   'addform.js': ['mountAddForm'],
   'manage.js': ['mountManage'],
