@@ -232,11 +232,11 @@ export function activityRowHtml(t, pocketNameById, now = new Date()) {
   const meta = metaParts.join(' · ');
 
   const noteLine = note
-    ? `<p class="pb-row__note text-sm text-slate-700">${esc(note)}</p>`
+    ? `<p class="pb-row__note text-sm text-slate-200">${esc(note)}</p>`
     : '';
 
   const metaLine = meta
-    ? `<p class="pb-row__meta text-xs text-slate-500">${meta}</p>`
+    ? `<p class="pb-row__meta text-xs text-slate-400">${meta}</p>`
     : '';
 
   return (
@@ -244,9 +244,9 @@ export function activityRowHtml(t, pocketNameById, now = new Date()) {
     `<span class="pb-row__user shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold` +
     ` text-slate-700">${esc(txn.user)}</span>` +
     `<div class="min-w-0 flex-1">${noteLine}${metaLine}</div>` +
-    `<span class="pb-row__amount shrink-0 text-sm font-semibold tabular-nums text-slate-900">` +
+    `<span class="pb-row__amount shrink-0 text-sm font-semibold tabular-nums text-slate-100">` +
     `${esc(formatMoney(txn.amount))}</span>` +
-    `<button type="button" class="pb-row__delete shrink-0 rounded p-1 text-slate-400 hover:text-rose-600"` +
+    `<button type="button" class="pb-row__delete shrink-0 rounded p-1 text-slate-400 hover:text-rose-400"` +
     ` data-action="delete-txn" data-txn-id="${esc(txn.id)}" aria-label="Delete transaction">✕</button>` +
     `</li>`
   );
@@ -396,7 +396,7 @@ export function renderActivity(container, transactions, pocketNameById) {
       : '';
     return (
       `<section class="pb-day" data-day="${esc(label)}">${heading}` +
-      `<ul class="pb-day__list divide-y divide-slate-100">${rows.join('')}</ul>` +
+      `<ul class="pb-day__list divide-y divide-slate-800">${rows.join('')}</ul>` +
       `</section>`
     );
   }).join('');

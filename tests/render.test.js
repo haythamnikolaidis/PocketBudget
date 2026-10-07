@@ -601,3 +601,12 @@ test('renderers are inert when handed no container', () => {
   assert.equal(renderPockets(null, [POCKET]), 'all');
   assert.equal(renderActivity(undefined, [txn()]), undefined);
 });
+/* ------------------------------------- activity text is legible on the dark page -- */
+
+test('activityRowHtml uses light text for the note, meta and amount (the page is dark)', () => {
+  const html = activityRowHtml(txn(), { P01: 'Groceries' });
+  assert.match(html, /pb-row__note[^"]*text-slate-200/);
+  assert.match(html, /pb-row__meta[^"]*text-slate-400/);
+  assert.match(html, /pb-row__amount[^"]*text-slate-100/);
+  assert.doesNotMatch(html, /pb-row__(note|meta|amount)[^"]*text-slate-(500|600|700|800|900)/);
+});
