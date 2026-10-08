@@ -26,7 +26,7 @@
 import { config as defaultConfig, makeConfig } from './config.js';
 import { makeApi } from './api.js';
 import { formatMoney, monthProgress } from './format.js';
-import { renderPockets, renderSummary, renderActivity } from './render.js';
+import { renderPockets, renderSummary, dayLabel, renderActivity } from './render.js';
 import { mountAddForm, updateAddFormState } from './addform.js';
 import { mountManage, updateManageState } from './manage.js';
 
@@ -371,6 +371,7 @@ export function boot(deps = {}) {
     toast: byId('toast'),
     versionBanner: byId('version-banner'),
     staleBanner: byId('stale-banner'),
+    homeDay: byId('home-day'),
     homeSummary: byId('home-summary'),
     pockets: byId('pockets'),
     activity: byId('activity'),
@@ -538,6 +539,7 @@ export function boot(deps = {}) {
     const pace = monthProgress(new Date(), payload.month);
     pocketFilter = renderPockets(els.pockets, pockets, { pace, filter: pocketFilter });
     renderSummary(els.homeSummary, payload.summary, pockets, pace);
+    if (els.homeDay) els.homeDay.textContent = dayLabel(pace);
   }
 
   /** Paint the summary, pocket list and activity feed from a getState payload. */

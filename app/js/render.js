@@ -169,9 +169,43 @@ export function pocketRowHtml(p, pace = null) {
 /* ------------------------------------------------------------- summary -- */
 
 /**
- * The dashboard header: money left this month, of the total limit, the day of
- * the month, an overall bar with the pace tick, and one plain-language verdict.
- * Returns '' when there is no limit to speak of (no pockets yet).
+ * A ring of the share of the budget still left, with a marker where it should be
+ * today. The marker is omitted when the month's pace is unknown.
+ */
+function ringHtml(pct, pace) {
+  const r = 36;
+  const c = 2 * Math.PI * r;
+  const arc = (c * pct) / 100;
+  const label = `${Math.round(pct)} percent of the budget left` +
+    (pace && Number.isFinite(pace.elapsedPct) ? `, marker at ${Math.round(100 - pace.elapsedPct)} percent expected` : '');
+  const marker = pace && Number.isFinite(pace.elapsedPct)
+    ? `<line x1="48" y1="2" x2="48" y2="20" stroke="#f1f5f9" stroke-width="2.5"` +
+      ` transform="rotate(${Math.round((100 - pace.elapsedPct) * 3.6 * 10) / 10} 48 48)"/>`
+    : '';
+  return (
+    `<svg class="pb-sum__ring shrink-0" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="${esc(label)}">` +
+    `<circle cx="48" cy="48" r="${r}" fill="none" stroke="#334155" stroke-width="10"/>` +
+    `<circle cx="48" cy="48" r="${r}" fill="none" stroke="#10b981" stroke-width="10"` +
+    ` stroke-dasharray="${arc.toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 48 48)"/>` +
+    `${marker}` +
+    `<text x="48" y="54" text-anchor="middle" fill="#f1f5f9" font-size="18" font-weight="700"` +
+    ` font-family="system-ui, sans-serif">${esc(Math.round(pct))}%</text></svg>`
+  );
+}
+
+/** "Day 7 of 31", or '' when the month's pace is unknown. */
+export function dayLabel(pace) {
+  return pace && Number.isFinite(pace.day) && Number.isFinite(pace.daysInMonth)
+    ? `Day ${pace.day} of ${pace.daysInMonth}`
+    : '';
+}
+
+/**
+ * The dashboard header: a ring of the budget left (marker where it should be
+ * today) beside money left this month, "of" the total limit, and one
+ * plain-language verdict. Returns '' when there is no limit to speak of (no
+ * pockets yet). The day of the month ("Day 7 of 31") sits on the page title's
+ * line; see dayLabel().
  *
  * `summary` is the payload's { totalBalance, totalLimit }; `pockets` supplies
  * the "needs a look" count; `pace` is monthProgress()'s result or null.
@@ -193,18 +227,16 @@ export function summaryHtml(summary, pockets, pace = null) {
   const verdict = pace
     ? `<strong class="font-semibold text-slate-100">${ahead ? 'Spending ahead of pace' : 'On pace'}.</strong> ${esc(needs)}`
     : `<strong class="font-semibold text-slate-100">${esc(needs)}</strong>`;
-  const status = ahead ? 'watch' : 'ok';
-  const dayLine = pace ? `<br>Day ${esc(pace.day)} of ${esc(pace.daysInMonth)}` : '';
 
   return (
-    `<div class="pb-sum grid grid-cols-2 gap-x-3 gap-y-2">` +
+    `<div class="pb-sum flex items-center gap-4">` +
+    ringHtml(pct, pace) +
     `<div class="min-w-0">` +
     `<p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Left this month</p>` +
-    `<p class="pb-sum__left text-3xl font-extrabold tabular-nums text-slate-100">${esc(formatRand(balance))}</p></div>` +
-    `<p class="pb-sum__of self-end text-right text-xs tabular-nums text-slate-400">of ${esc(formatRand(limit))}${dayLine}</p>` +
-    barHtml(pct, status, pace, 'Budget left this month', 'h-2') +
-    `<p class="pb-sum__verdict col-span-2 text-xs text-slate-400">${verdict}</p>` +
-    `</div>`
+    `<p class="pb-sum__left text-3xl font-extrabold tabular-nums text-slate-100">${esc(formatRand(balance))}</p>` +
+    `<p class="pb-sum__of text-xs tabular-nums text-slate-400">of ${esc(formatRand(limit))}</p>` +
+    `<p class="pb-sum__verdict mt-0.5 text-xs text-slate-400">${verdict}</p>` +
+    `</div></div>`
   );
 }
 

@@ -188,7 +188,7 @@ const SHELL_IDS = [
   'toast', 'version-banner', 'stale-banner',
   'view-setup', 'setup-form', 'setup-endpoint', 'setup-token',
   'setup-save', 'setup-test', 'setup-status', 'setup-cancel', 'change-connection',
-  'view-home', 'home-summary', 'pockets', 'activity',
+  'view-home', 'home-day', 'home-summary', 'pockets', 'activity',
   'view-add', 'add-form', 'add-amount', 'add-pocket', 'add-note',
   'add-user', 'add-submit', 'add-reason',
   'view-manage', 'manage-list', 'manage-form', 'manage-name',
@@ -1394,6 +1394,25 @@ test('the home summary leads with money left, in whole rand', async () => {
   assert.match(html, /pb-sum__left[^>]*>R340</, 'balance, rounded down');
   assert.match(html, /of R920/);
   assert.match(html, /1 pocket needs a look/, 'the locked pocket needs a look');
+  handle.teardown();
+});
+
+test('the day of the month sits on the title line when the payload is for this month', async () => {
+  const now = new Date();
+  const month = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  const h = makeHarness();
+  const handle = await bootIn(h, { config: configuredConfig(), api: fakeApi({ state: { ...STATE, month } }) });
+  await handle.ready;
+  const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  assert.equal(h.byId.get('home-day').textContent, `Day ${now.getDate()} of ${days}`);
+  handle.teardown();
+});
+
+test('the day of the month is blank for a payload from another month', async () => {
+  const h = makeHarness();
+  const handle = await bootIn(h, { config: configuredConfig(), api: fakeApi({ state: { ...STATE, month: '2000-01' } }) });
+  await handle.ready;
+  assert.equal(h.byId.get('home-day').textContent, '');
   handle.teardown();
 });
 
