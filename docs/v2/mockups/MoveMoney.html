@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Move money</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+.scr{position:relative;width:390px;overflow:hidden;background:#0f172a;color:#f1f5f9;font-family:'Manrope',system-ui,sans-serif;font-variant-numeric:tabular-nums;font-size:14px;line-height:1.4}
+.h1{margin:0;font-size:22px;font-weight:800;letter-spacing:-0.01em}
+.meta{font-size:12px;color:#94a3b8}
+.ib{font:inherit;width:44px;height:44px;border-radius:12px;border:1px solid #334155;background:#1e293b;color:#f1f5f9;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.lab{display:block;font-size:12px;font-weight:700;color:#94a3b8;margin:0 0 6px}
+.pk{font:inherit;width:100%;text-align:left;display:flex;align-items:center;gap:12px;min-height:60px;padding:10px 14px;border-radius:14px;border:1px solid #334155;background:#1e293b;color:#f1f5f9}
+.inp{font:inherit;width:100%;min-height:48px;padding:10px 14px;border-radius:12px;border:1px solid #334155;background:#0b1222;color:#f1f5f9;font-size:16px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font:inherit;font-size:13px;font-weight:600;min-height:40px;padding:8px 14px;border-radius:999px;border:1px solid #334155;background:#0f172a;color:#e2e8f0}
+.chip.on{background:#10b981;border-color:#10b981;color:#052e1f}
+.btn{font:inherit;font-size:16px;font-weight:800;width:100%;min-height:52px;border:0;border-radius:14px;background:#10b981;color:#052e1f}
+</style>
+</helmet>
+<div class="scr" style="height: 844px; padding: 20px 20px 24px; display: flex; flex-direction: column">
+  <div style="display: flex; align-items: center; gap: 12px">
+    <button class="ib" aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+    <h1 class="h1">Move money</h1>
+  </div>
+
+  <div style="margin-top: 20px">
+    <span class="lab">From</span>
+    <button class="pk"><span style="flex: 1"><strong style="display: block; font-size: 15px">Dining Out</strong><span class="meta">R385.00 left</span></span><span class="meta">Change</span></button>
+    <div style="display: flex; justify-content: center; margin: -6px 0">
+      <button class="ib" aria-label="Swap from and to" style="border-radius: 999px; position: relative; z-index: 1; background: #0f172a"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4v16M4 16l4 4 4-4M16 20V4M12 8l4-4 4 4"></path></svg></button>
+    </div>
+    <span class="lab">To</span>
+    <button class="pk"><span style="flex: 1"><strong style="display: block; font-size: 15px">Groceries</strong><span class="meta">R1,780.00 left</span></span><span class="meta">Change</span></button>
+  </div>
+
+  <div style="margin-top: 18px">
+    <label class="lab" for="mv-amt">Amount</label>
+    <input id="mv-amt" class="inp" inputmode="decimal" value="R 200.00" style="font-size: 32px; font-weight: 800; min-height: 64px">
+    <div class="chips" style="margin-top: 10px">
+      <button class="chip">R100</button>
+      <button class="chip on">R200</button>
+      <button class="chip">R300</button>
+      <button class="chip">All R385</button>
+    </div>
+  </div>
+
+  <div style="margin-top: 16px">
+    <label class="lab" for="mv-note">Why (optional)</label>
+    <input id="mv-note" class="inp" value="Big braai">
+  </div>
+
+  <div style="margin-top: 16px; background: #1e293b; border-radius: 14px; padding: 12px 14px; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 6px 12px; font-size: 13px">
+    <span>Dining Out</span><span>R385.00 → <strong>R185.00</strong></span>
+    <span>Groceries</span><span>R1,780.00 → <strong style="color: #a7f3d0">R1,980.00</strong></span>
+  </div>
+  <p class="meta" style="margin: 10px 2px 0">Monthly limits stay the same. The move shows in both pockets' history and in the activity feed.</p>
+
+  <button class="btn" style="margin-top: auto">Move R200.00</button>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

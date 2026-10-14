@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Credit card</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+.scr{position:relative;width:390px;overflow:hidden;background:#0f172a;color:#f1f5f9;font-family:'Manrope',system-ui,sans-serif;font-variant-numeric:tabular-nums;font-size:14px;line-height:1.4}
+.h1{margin:0;font-size:22px;font-weight:800;letter-spacing:-0.01em}
+.sub{margin:0;font-size:13px;color:#94a3b8}
+.sec{margin:22px 0 6px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8}
+.meta{font-size:12px;color:#94a3b8}
+.ib{font:inherit;width:44px;height:44px;border-radius:12px;border:1px solid #334155;background:#1e293b;color:#f1f5f9;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.card{background:#1e293b;border-radius:16px;padding:16px}
+.btn{font:inherit;font-size:15px;font-weight:800;min-height:48px;padding:0 18px;border:0;border-radius:12px;background:#10b981;color:#052e1f}
+.pb{display:grid;grid-template-columns:96px minmax(0,1fr) 76px;gap:10px;align-items:center;font-size:13px;padding:5px 0}
+.track{height:8px;border-radius:4px;background:#334155;overflow:hidden}
+.fill{height:8px;background:#60a5fa}
+.r{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:10px 0;border-bottom:1px solid #1e293b}
+.amt{font-weight:800;text-align:right}
+</style>
+</helmet>
+<div class="scr" style="height: 1000px; padding: 20px">
+  <div style="display: flex; align-items: center; gap: 12px">
+    <button class="ib" aria-label="Back"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg></button>
+    <div style="flex: 1">
+      <h1 class="h1">Sam's Visa</h1>
+      <p class="sub">Statement closes on the 25th · due on the 15th</p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top: 16px; background: #172554; border: 1px solid #1e40af">
+    <p class="meta" style="margin: 0; color: #bfdbfe">This cycle · 26 Oct – 25 Nov</p>
+    <p style="margin: 2px 0 0; font-size: 34px; font-weight: 800; letter-spacing: -0.02em">R4,320.00</p>
+    <p class="meta" style="margin: 0; color: #bfdbfe">32 expenses logged on this card</p>
+    <div style="margin-top: 12px; display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: rgba(16,185,129,.14)">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6ee7b7" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px"><path d="M5 12l5 5L19 7"></path></svg>
+      <p style="margin: 0; font-size: 13px; color: #d1fae5">All of it is already covered by your pockets. The money is sitting in <strong>FNB Cheque</strong>, ready for the payment.</p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top: 12px; display: flex; align-items: center; gap: 12px; border: 1px solid rgba(245,158,11,.45)">
+    <div style="flex: 1">
+      <p class="meta" style="margin: 0">Statement · 25 Oct</p>
+      <p style="margin: 0; font-size: 20px; font-weight: 800">R3,980.00</p>
+      <p style="margin: 0; font-size: 12px; font-weight: 700; color: #fcd34d">Due 15 Nov · in 5 days</p>
+    </div>
+    <button class="btn">Mark paid</button>
+  </div>
+
+  <div style="margin-top: 12px">
+    <div style="display: flex; justify-content: space-between; font-size: 13px"><span class="meta">Available credit</span><span><strong>R21,700</strong> <span class="meta">of R30,000</span></span></div>
+    <div class="track" style="margin-top: 6px"><div class="fill" style="width: 27.7%; background: #475569"></div></div>
+  </div>
+
+  <h2 class="sec">This cycle by pocket</h2>
+  <div class="pb"><span>Groceries</span><div class="track"><div class="fill" style="width: 100%"></div></div><span class="amt">R1,890</span></div>
+  <div class="pb"><span>Petrol</span><div class="track"><div class="fill" style="width: 68.8%"></div></div><span class="amt">R1,300</span></div>
+  <div class="pb"><span>Household</span><div class="track"><div class="fill" style="width: 36.5%"></div></div><span class="amt">R690</span></div>
+  <div class="pb"><span>Dining Out</span><div class="track"><div class="fill" style="width: 23.3%"></div></div><span class="amt">R440</span></div>
+
+  <h2 class="sec">Recent on this card</h2>
+  <div class="r"><span style="font-weight: 700">Engen</span><span class="amt">R650.00</span><span class="meta">Petrol · 9 Nov · Sam</span><span></span></div>
+  <div class="r"><span style="font-weight: 700">Fruit &amp; Veg City</span><span class="amt">R312.80</span><span class="meta">Groceries · 9 Nov · Sam</span><span></span></div>
+  <div class="r"><span style="font-weight: 700">Ocean Basket</span><span class="amt">R440.00</span><span class="meta">Dining Out · 7 Nov · Alex</span><span></span></div>
+  <p class="meta" style="text-align: center; margin: 12px 0 0"><strong style="color: #6ee7b7">See all 32</strong></p>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

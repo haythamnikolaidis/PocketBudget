@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Quick add</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+.scr{position:relative;width:390px;overflow:hidden;background:#0f172a;color:#f1f5f9;font-family:'Manrope',system-ui,sans-serif;font-variant-numeric:tabular-nums;font-size:14px;line-height:1.4}
+.h1{margin:0;font-size:24px;font-weight:800;letter-spacing:-0.01em}
+.meta{font-size:12px;color:#94a3b8}
+.lab{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;font-weight:700;color:#94a3b8;margin:0 0 6px}
+.inp{font:inherit;width:100%;min-height:48px;padding:10px 14px;border-radius:12px;border:1px solid #334155;background:#0b1222;color:#f1f5f9;font-size:16px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font:inherit;font-size:13px;font-weight:600;min-height:40px;padding:6px 14px;border-radius:999px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;display:inline-flex;flex-direction:column;align-items:flex-start;justify-content:center;line-height:1.2}
+.chip small{font-size:11px;font-weight:600;color:#94a3b8}
+.chip.on{background:#10b981;border-color:#10b981;color:#052e1f}
+.chip.on small{color:#065f46}
+.chip.blue.on{background:#60a5fa;border-color:#60a5fa;color:#0b1a33}
+.chip.blue.on small{color:#1e3a8a}
+.btn{font:inherit;font-size:16px;font-weight:800;width:100%;min-height:52px;border:0;border-radius:14px;background:#10b981;color:#052e1f}
+.lnk{font:inherit;font-size:13px;font-weight:700;background:none;border:0;padding:6px 0;min-height:36px;color:#6ee7b7}
+.tabbar{position:absolute;left:0;right:0;bottom:0;height:76px;border-top:1px solid #1e293b;background:#0f172a;display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+.tb{font:inherit;font-size:11px;font-weight:600;background:none;border:0;color:#94a3b8;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding-bottom:12px}
+.tb.on{color:#6ee7b7}
+</style>
+</helmet>
+<div class="scr" style="height: 844px; padding: 20px 20px 96px">
+  <div style="display: flex; align-items: baseline; justify-content: space-between">
+    <h1 class="h1">Add an expense</h1>
+    <button class="lnk" style="color: #cbd5e1">Sam ▾</button>
+  </div>
+
+  <div style="margin-top: 14px">
+    <label class="lab" for="qa-amt">Amount</label>
+    <input id="qa-amt" class="inp" inputmode="decimal" value="R 650.00" style="font-size: 36px; font-weight: 800; min-height: 68px; border-color: #10b981">
+  </div>
+
+  <div style="margin-top: 14px; position: relative">
+    <label class="lab" for="qa-note">Store or note</label>
+    <input id="qa-note" class="inp" value="Engen">
+    <div style="margin-top: 6px; background: #1e293b; border: 1px solid #334155; border-radius: 12px; overflow: hidden">
+      <button class="chip" style="all: unset; box-sizing: border-box; display: flex; width: 100%; justify-content: space-between; align-items: center; padding: 10px 14px; min-height: 44px; font-size: 14px; background: #263449">
+        <span><strong>Engen</strong></span><span class="meta">usually Petrol · Visa</span>
+      </button>
+      <button class="chip" style="all: unset; box-sizing: border-box; display: flex; width: 100%; justify-content: space-between; align-items: center; padding: 10px 14px; min-height: 44px; font-size: 14px; border-top: 1px solid #334155">
+        <span>Engen Quickshop</span><span class="meta">usually Household</span>
+      </button>
+    </div>
+  </div>
+
+  <div style="margin-top: 14px">
+    <p class="lab">Pocket <span style="font-weight: 600">picked from “Engen”</span></p>
+    <div class="chips">
+      <button class="chip on">Petrol<small>R1,420 left</small></button>
+      <button class="chip">Groceries<small>R1,980 left</small></button>
+      <button class="chip">Household<small>R1,060 left</small></button>
+      <button class="chip">More…<small>8 pockets</small></button>
+    </div>
+    <button class="lnk">Split across pockets</button>
+  </div>
+
+  <div style="margin-top: 4px">
+    <p class="lab">Paid with</p>
+    <div class="chips">
+      <button class="chip blue on">Sam's Visa</button>
+      <button class="chip">FNB Cheque</button>
+      <button class="chip">Cash</button>
+    </div>
+  </div>
+
+  <div style="margin-top: 14px; display: flex; align-items: center; gap: 8px">
+    <p class="lab" style="margin: 0 6px 0 0">When</p>
+    <button class="chip on" style="min-height: 36px">Today</button>
+    <button class="chip" style="min-height: 36px">Yesterday</button>
+    <button class="chip" style="min-height: 36px">Pick a day</button>
+  </div>
+
+  <button class="btn" style="margin-top: 18px">Save R650.00 to Petrol</button>
+
+  <nav class="tabbar" aria-label="Main">
+    <button class="tb"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"></rect><rect x="13" y="4" width="7" height="7" rx="1.5"></rect><rect x="4" y="13" width="7" height="7" rx="1.5"></rect><rect x="13" y="13" width="7" height="7" rx="1.5"></rect></svg>Pockets</button>
+    <button class="tb on"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v8M8 12h8"></path></svg>Add</button>
+    <button class="tb"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"></path><circle cx="16" cy="7" r="2"></circle><circle cx="10" cy="17" r="2"></circle></svg>Manage</button>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
