@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Activity</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+.scr{position:relative;width:390px;overflow:hidden;background:#0f172a;color:#f1f5f9;font-family:'Manrope',system-ui,sans-serif;font-variant-numeric:tabular-nums;font-size:14px;line-height:1.4}
+.h1{margin:0;font-size:24px;font-weight:800;letter-spacing:-0.01em}
+.sec{margin:16px 0 2px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8}
+.meta{font-size:12px;color:#94a3b8}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font:inherit;font-size:13px;font-weight:600;min-height:36px;padding:6px 14px;border-radius:999px;border:1px solid #334155;background:#0f172a;color:#e2e8f0}
+.chip.on{background:#e2e8f0;border-color:#e2e8f0;color:#0f172a}
+.r{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid #1e293b}
+.who{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#e2e8f0;color:#1e293b}
+.adj{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:rgba(167,243,208,.14);color:#a7f3d0}
+.amt{font-weight:800;white-space:nowrap}
+.x{font:inherit;width:36px;height:36px;border-radius:10px;border:0;background:none;color:#94a3b8;display:inline-flex;align-items:center;justify-content:center}
+.sub{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;margin:0 0 0 46px;padding:8px 12px;border-left:2px solid #334155;font-size:13px}
+.mini{font:inherit;font-size:12px;font-weight:700;min-height:36px;padding:0 12px;border-radius:999px;border:1px solid #334155;background:#0f172a;color:#f1f5f9}
+.tabbar{position:absolute;left:0;right:0;bottom:0;height:76px;border-top:1px solid #1e293b;background:#0f172a;display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+.tb{font:inherit;font-size:11px;font-weight:600;background:none;border:0;color:#94a3b8;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding-bottom:12px}
+.tb.on{color:#6ee7b7}
+</style>
+</helmet>
+<div class="scr" style="height: 844px; padding: 20px 20px 96px">
+  <div style="display: flex; align-items: baseline; justify-content: space-between">
+    <h1 class="h1">Activity</h1>
+    <span class="meta">November</span>
+  </div>
+  <div class="chips" style="margin-top: 12px">
+    <button class="chip on">Everyone</button>
+    <button class="chip">Alex</button>
+    <button class="chip">Sam</button>
+    <button class="chip">Moves</button>
+  </div>
+
+  <h2 class="sec">Today</h2>
+  <div class="r" style="border-bottom: 0">
+    <span class="who">Sam</span>
+    <span><span style="display: block; font-weight: 700">Checkers</span><span class="meta">3 pockets · Sam's Visa</span></span>
+    <span class="amt">R1,240.00</span>
+    <button class="x" aria-label="Collapse Checkers" aria-expanded="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"></path></svg></button>
+  </div>
+  <div class="sub">
+    <span>Groceries</span><span>R900.00</span>
+    <span>Household</span><span>R290.00</span>
+    <span>Gifts</span><span>R50.00</span>
+  </div>
+  <div style="display: flex; gap: 8px; margin: 8px 0 0 46px; padding-bottom: 10px; border-bottom: 1px solid #1e293b">
+    <button class="mini">Edit</button>
+    <button class="mini" style="color: #fda4af; border-color: rgba(244,63,94,.4)">Delete all 3</button>
+  </div>
+
+  <div class="r">
+    <span class="who">Sam</span>
+    <span><span style="display: block; font-weight: 700">Engen</span><span class="meta">Petrol · Sam's Visa</span></span>
+    <span class="amt">R650.00</span>
+    <button class="x" aria-label="Delete Engen"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+  </div>
+
+  <h2 class="sec">Yesterday</h2>
+  <div class="r">
+    <span class="adj">Move</span>
+    <span><span style="display: block; font-weight: 700">Dining Out → Groceries</span><span class="meta">"Big braai" · Alex</span></span>
+    <span class="amt" style="color: #a7f3d0">R200.00</span>
+    <button class="x" aria-label="Undo move"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+  </div>
+  <div class="r">
+    <span class="who">Alex</span>
+    <span><span style="display: block; font-weight: 700">Woolworths</span><span class="meta">Groceries · FNB Cheque</span></span>
+    <span class="amt">R486.20</span>
+    <button class="x" aria-label="Delete Woolworths"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+  </div>
+  <div class="r">
+    <span class="who">Alex</span>
+    <span><span style="display: block; font-weight: 700">Netflix</span><span class="meta">Household · Alex's Mastercard</span></span>
+    <span class="amt">R199.00</span>
+    <button class="x" aria-label="Delete Netflix"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+  </div>
+
+  <div role="status" style="position: absolute; left: 16px; right: 16px; bottom: 92px; display: flex; align-items: center; gap: 12px; padding: 10px 10px 10px 16px; border-radius: 14px; background: #e2e8f0; color: #0f172a; box-shadow: 0 8px 24px rgba(0,0,0,.4)">
+    <span style="flex: 1; font-size: 13px"><strong>Deleted Spar R141.00.</strong> Refunded to Groceries.</span>
+    <button style="font: inherit; font-size: 14px; font-weight: 800; min-height: 40px; padding: 0 14px; border-radius: 10px; border: 0; background: #0f172a; color: #6ee7b7">Undo</button>
+  </div>
+
+  <nav class="tabbar" aria-label="Main">
+    <button class="tb on"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"></rect><rect x="13" y="4" width="7" height="7" rx="1.5"></rect><rect x="4" y="13" width="7" height="7" rx="1.5"></rect><rect x="13" y="13" width="7" height="7" rx="1.5"></rect></svg>Pockets</button>
+    <button class="tb"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v8M8 12h8"></path></svg>Add</button>
+    <button class="tb"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"></path><circle cx="16" cy="7" r="2"></circle><circle cx="10" cy="17" r="2"></circle></svg>Manage</button>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

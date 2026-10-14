@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cover the shortfall</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+.scr{position:relative;width:390px;overflow:hidden;background:#0f172a;color:#f1f5f9;font-family:'Manrope',system-ui,sans-serif;font-variant-numeric:tabular-nums;font-size:14px;line-height:1.4}
+.h1{margin:0;font-size:24px;font-weight:800;letter-spacing:-0.01em}
+.meta{font-size:12px;color:#94a3b8}
+.lab{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;font-weight:700;color:#94a3b8;margin:0 0 6px}
+.inp{font:inherit;width:100%;min-height:48px;padding:10px 14px;border-radius:12px;border:1px solid #334155;background:#0b1222;color:#f1f5f9;font-size:16px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font:inherit;font-size:13px;font-weight:600;min-height:40px;padding:6px 14px;border-radius:999px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;display:inline-flex;flex-direction:column;align-items:flex-start;justify-content:center;line-height:1.2}
+.chip small{font-size:11px;font-weight:600;color:#94a3b8}
+.chip.on{background:#10b981;border-color:#10b981;color:#052e1f}
+.chip.on small{color:#065f46}
+.chip.warn{border-color:#f59e0b;background:rgba(245,158,11,.12)}
+.chip.warn small{color:#fcd34d}
+.btn{font:inherit;font-size:16px;font-weight:800;width:100%;min-height:52px;border:0;border-radius:14px;background:#10b981;color:#052e1f}
+.tabbar{position:absolute;left:0;right:0;bottom:0;height:76px;border-top:1px solid #1e293b;background:#0f172a;display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+.tb{font:inherit;font-size:11px;font-weight:600;background:none;border:0;color:#94a3b8;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding-bottom:12px}
+.tb.on{color:#6ee7b7}
+</style>
+</helmet>
+<div class="scr" style="height: 844px; padding: 20px 20px 96px">
+  <h1 class="h1">Add an expense</h1>
+
+  <div style="margin-top: 14px">
+    <label class="lab" for="sf-amt">Amount</label>
+    <input id="sf-amt" class="inp" inputmode="decimal" value="R 400.00" style="font-size: 36px; font-weight: 800; min-height: 68px">
+  </div>
+  <div style="margin-top: 12px">
+    <label class="lab" for="sf-note">Store or note</label>
+    <input id="sf-note" class="inp" value="Pick n Pay">
+  </div>
+
+  <div style="margin-top: 14px">
+    <p class="lab">Pocket</p>
+    <div class="chips">
+      <button class="chip warn">Groceries<small>R340 left</small></button>
+      <button class="chip">Household<small>R210 left</small></button>
+      <button class="chip">Dining Out<small>R85 left</small></button>
+      <button class="chip">More…<small>8 pockets</small></button>
+    </div>
+  </div>
+
+  <section style="margin-top: 14px; border-radius: 16px; padding: 14px; background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.45)" aria-labelledby="sf-h">
+    <h2 id="sf-h" style="margin: 0; font-size: 15px; font-weight: 800">Groceries only has R340.00</h2>
+    <p style="margin: 2px 0 10px; font-size: 13px; color: #e2e8f0">Take the other <strong>R60.00</strong> from:</p>
+    <div class="chips">
+      <button class="chip on">Household<small>R210 → R150</small></button>
+      <button class="chip">Dining Out<small>R85 → R25</small></button>
+      <button class="chip">Savings<small>R2,190</small></button>
+      <button class="chip">Split it myself</button>
+    </div>
+  </section>
+
+  <div style="margin-top: 12px; background: #1e293b; border-radius: 14px; padding: 10px 14px; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 4px 12px; font-size: 13px">
+    <span>Groceries <span class="meta">· empties the pocket</span></span><strong>R340.00</strong>
+    <span>Household</span><strong>R60.00</strong>
+  </div>
+
+  <button class="btn" style="margin-top: 14px">Save R400.00 across 2 pockets</button>
+
+  <nav class="tabbar" aria-label="Main">
+    <button class="tb"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"></rect><rect x="13" y="4" width="7" height="7" rx="1.5"></rect><rect x="4" y="13" width="7" height="7" rx="1.5"></rect><rect x="13" y="13" width="7" height="7" rx="1.5"></rect></svg>Pockets</button>
+    <button class="tb on"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v8M8 12h8"></path></svg>Add</button>
+    <button class="tb"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"></path><circle cx="16" cy="7" r="2"></circle><circle cx="10" cy="17" r="2"></circle></svg>Manage</button>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

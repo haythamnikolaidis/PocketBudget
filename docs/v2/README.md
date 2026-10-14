@@ -1,190 +1,191 @@
-# PocketBudget v2: implementation plan
+# PocketBudget v2: runbook for the coding agent
 
-Start here. This folder is everything you need to build v2. You don't need any context beyond this
-page, the task files, and the code.
+> **Prompt to start or restart the agent** (the same prompt every time):
+> *"Read `docs/v2/README.md` and follow it. Work through `docs/v2/PROGRESS.md` one task at a time
+> until you reach a HUMAN task or run low on budget."*
 
-- **What and why:** [`../RECOMMENDATIONS.md`](../RECOMMENDATIONS.md) (the product review and the
-  owner's decisions).
-- **What it should look like:** the approved UI mockups:
-  https://claude.ai/artifact/5RFSUKgZ2QWi1powXwQkYo (ask the product owner to share it with you).
-  Each task names the mockup screen it builds.
-- **How to build it:** this page, then the task files in [`tasks/`](tasks/), **in order**.
+You are building v2 of PocketBudget one small task at a time. Sessions can end at any moment
+(token limit, container reset), so every task is **atomic**: one task = one commit, and progress is
+recorded in git, not in your memory.
+
+**Files you use:**
+- `docs/v2/PROGRESS.md`: the task list and its status. This is the source of truth.
+- `docs/v2/tasks/TNN-*.md`: one file per task, holding everything that task needs.
+- `docs/v2/HANDOFF.md`: exists only while a task is half done.
+- `docs/v2/mockups/*.html`: the approved screen designs, a reference for layout and wording.
+- `docs/v2/LATER.md`: ideas that are out of scope. Never build them.
+
+Don't read `docs/RECOMMENDATIONS.md`, `docs/IMPLEMENTATION_PLAN.md` or the other docs unless a task
+tells you to. Everything you need is here and in the task file.
 
 ---
 
-## 1. What we are building
+## 1. Start of every session (always, in this order)
 
-PocketBudget is a phone app for a couple. They split their monthly money into **pockets**
-(Groceries, Petrol…), log every expense against a pocket, and the app refuses any expense that
-would take a pocket below zero. v2 adds four things:
-
-1. **Leftovers carry over.** At month end, a pocket's leftover rolls into next month, moves to
-   another pocket (usually Savings), or resets. Money can also be moved between pockets at any time.
-2. **One shop, several pockets.** A single expense can be split across up to 10 pockets. When a
-   pocket is short, the app offers to take the difference from another pocket.
-3. **Faster entry.** The app remembers your pocket and card, suggests a pocket from the store
-   name, lets you log yesterday's coffee, and gives you Undo instead of "Are you sure?".
-4. **Credit cards.** Each expense records what paid for it. The app shows what's owed on each card
-   and lets you record paying it.
-
-## 2. The ten-minute tour of the code
-
-```
-app/                 the phone app (plain JS modules, no framework, no build step)
-  index.html         every screen is a <section id="view-…"> in this one file
-  js/app.js          wiring: boot, refresh, switching views, click handlers
-  js/api.js          talks to the backend. One method per backend action
-  js/render.js       home screen HTML (pocket rows, summary ring, activity feed)
-  js/addform.js      the "Add an expense" form
-  js/manage.js       the pocket management screen
-  js/format.js       money formatting / parsing (R1,234.56)
-  sw.js              service worker (offline shell). Its cache version is generated
-backend/             Google Apps Script, written as ES modules so Node can test it
-  00_Config.gs.js    constants, including the ACTIONS list the API accepts
-  01_Utils.gs.js     money parsing (always integer CENTS), validation
-  02_Auth.gs.js      household token check
-  03_Sheets.gs.js    THE ONLY FILE that touches the spreadsheet
-  04_Rollover.gs.js  month maths and the month-end rollover (pure functions)
-  05_Api.gs.js       one function per API action, plus the dispatcher
-  06_Report.gs.js    builds the Monthly_Report sheet
-  07_Entry.gs.js     doGet/doPost, the nightly trigger, setup()
-tests/               node:test. helpers/ has a fake spreadsheet and fake Apps Script globals
+```bash
+git status --porcelain
+git log --oneline -1
+cat docs/v2/HANDOFF.md 2>/dev/null
+grep -nE '\| (todo|doing) ' docs/v2/PROGRESS.md | head -3
 ```
 
-**The data lives in one Google Sheet.** Sheet tabs are database tables, rows are records. Today
-there are `Pockets`, `Transactions`, and the generated `Monthly_Report`. v2 adds `Adjustments` and
-`Accounts`, and a few columns.
+Then decide:
 
-**How a request flows:** phone → `app/js/api.js` POSTs `{action, token, …}` → `07_Entry doPost`
-→ `05_Api handleRequest` → the handler → `03_Sheets` reads and writes the sheet → JSON comes back.
-After any write, the app calls `getState` again to redraw everything.
-
-**Read these files first, in this order** (about an hour): `05_Api.gs.js` `createTransaction`
-(the most important function in the app), `03_Sheets.gs.js`, `04_Rollover.gs.js`,
-`app/js/addform.js`, then `tests/money-path.test.js` to see how backend tests are written.
-
-## 3. Rules you must not break
-
-These are what make the app trustworthy. Every PR is reviewed against them, and most have tests
-already.
-
-1. **A pocket balance never goes below zero.** Every money write re-reads the balance *inside the
-   lock* and refuses if it would go negative.
-2. **Every write goes inside the script lock, and the lock is released in `finally` via
-   `unlock(lock)`** (which flushes first). Copy the shape of `createTransaction`:
-   `auth → validate → lock → re-read → check → write → unlock`.
-3. **Money is integer cents inside the backend.** Use `parseAmountInput` (returns cents) and
-   `toDollars`. Never add floats like `0.1 + 0.2`.
-4. **Retries must not double-spend.** Every money-moving action takes a `requestId`; if a row with
-   that id already exists, return the original result and change nothing.
-5. **The insufficient-funds message is exact:** `Insufficient funds in [Pocket Name]. Remaining:
-   R[Balance]`. Reuse the existing `fail('INSUFFICIENT_FUNDS', …)` code.
-6. **Only `03_Sheets.gs.js` calls `SpreadsheetApp`.** Handlers call functions in it.
-7. **No `innerHTML` with user text.** Names and notes come from a spreadsheet anyone can type into.
-   Use `esc()` from `render.js` when building HTML strings, or `textContent`.
-8. **Don't change the `text/plain` Content-Type in `api.js`.** See the README for why.
-9. **Old phones keep working.** Never remove or rename an existing action or response field; only add.
-
-## 4. How to do a task
-
-1. Read the task file and look at its mockup screen.
-2. Create a branch: `git checkout -b v2/NN-short-name`.
-3. **Write the backend test first** where there is backend work, then make it pass.
-4. Run, before every commit:
-   ```bash
-   npm run check                 # builds the Apps Script bundle and runs every test
-   ```
-   If you changed anything in `app/`:
-   ```bash
-   npm run build:css             # only if you used a Tailwind class not used anywhere before
-   node backend/sw-version.mjs   # regenerates the service worker cache version
-   ```
-   CI fails if either is stale.
-5. Try it in the browser: `npm run dev` serves the app at http://localhost:8080. Point it at a
-   **test copy** of the Sheet (see §6), never the couple's real one.
-6. Open a PR to `master` titled `v2 task NN: …`. Keep it to one task. Fill in "Done when" from
-   the task as a checklist.
-
-**Adding a new API action** always touches the same places:
-
-| Where | What |
+| What you see | Do |
 |---|---|
-| `backend/00_Config.gs.js` | add the name to `ACTIONS` |
-| `backend/05_Api.gs.js` | write the handler, add it to `HANDLERS` |
-| `backend/03_Sheets.gs.js` | any new reads and writes |
-| `app/js/api.js` | add a method to the object `makeApi` returns |
-| `tests/` | a test file for the handler, and an `api-client` test for the method |
+| Clean tree, last commit is `v2(T…)` or anything else, no HANDOFF | Start the first `todo` task in PROGRESS.md |
+| Last commit starts with `wip(T…)`, HANDOFF.md exists | Resume that task from HANDOFF.md (§4) |
+| Dirty tree (uncommitted changes) | Recover (§4) |
+| The first open task has type `HUMAN` | **Stop.** Report: "Milestone ready for human checkpoint TNN." Do nothing else |
 
-**Adding a new screen:** add a `<section id="view-NAME" class="hidden">` to `app/index.html`, add
-`'NAME'` to `VIEWS` in `app/js/app.js`, and open it with `switchView(views, tabs, 'NAME')`. Screens
-without a tab (pocket detail, move money, card detail…) need a Back button that goes to `home`.
+## 2. Doing a task
 
-**Adding a column or a sheet:** add it in `migrateV2()` (task 03). Append new columns to the end of
-a sheet; never insert in the middle, because existing code reads by column number.
+1. Read §5 (Rules) once per session, then **only** your task file.
+2. Read only the code the task's **Read** list names. Find things with `grep -n`, and read with an
+   offset and limit; don't read whole large files. `app/js/app.js` is over 1,000 lines; never read
+   it whole.
+3. Make the change described under **Change**, then write the tests listed under **Tests**.
+4. Run the task's **Verify** commands until they pass. The last one is always `npm run check`
+   (builds the bundle, stamps the service-worker version, and runs every test).
+5. Edit `docs/v2/PROGRESS.md`: set the task's status to `done`. Delete `docs/v2/HANDOFF.md` if it
+   exists.
+6. Commit and push:
+   ```bash
+   git add -A && git commit -m "<the Commit line from the task>" && git push
+   ```
+7. If you still have plenty of budget, go back to §1 for the next task. Otherwise stop cleanly.
 
-## 5. Order of work
+**One task, one `v2(…)` commit.** Never put two tasks in one commit. Never commit failing tests
+under a `v2(…)` message.
 
-Each milestone ends with something the couple can use, so ship (deploy) at the end of each one.
-Tasks within a milestone go in number order unless the task says otherwise.
+## 3. When you're running low on budget
 
-| Milestone | Tasks | The couple gets |
-|---|---|---|
-| **M1: Correct & fast** | 00–03 | Correct balances on the 1st; faster loading; schema ready for v2 |
-| **M2: Leftovers & moving money** | 04–10 | Carry-over, Savings, Move money, month-end card, pocket detail |
-| **M3: Faster entry & splits** | 11–16 | Remembered choices, store suggestions, splits, shortfall cover, undo |
-| **M4: Credit cards** | 17–20 | Paid-with, card view, mark paid |
-| **Later** (only if asked) | 21 | Edit expense, refunds, edits to earlier months |
+Stop starting new work while you still have room for these steps:
 
-| # | Task | Size |
-|---|---|---|
-| 00 | [Get set up and learn the code](tasks/00-orientation.md) | S |
-| 01 | [Fix the rollover timing bug](tasks/01-rollover-timing-fix.md) | M |
-| 02 | [Read only this month's transactions in getState](tasks/02-bounded-reads.md) | S |
-| 03 | [`migrateV2()`: one place for schema changes](tasks/03-migration.md) | S |
-| 04 | [Adjustments sheet + `transferFunds` API](tasks/04-transfers-api.md) | M |
-| 05 | [Move money screen](tasks/05-move-money-ui.md) | S |
-| 06 | [Leftover rules in the rollover](tasks/06-leftover-rules.md) | M |
-| 07 | [Leftover rule on the pocket form](tasks/07-pocket-form-rule.md) | S |
-| 08 | [Home: carried-in bars, Savings section](tasks/08-home-carry-display.md) | S |
-| 09 | [Month-end card](tasks/09-month-end-card.md) | M |
-| 10 | [Pocket detail screen](tasks/10-pocket-detail.md) | M |
-| 11 | [Quick wins on the add form](tasks/11-addform-quick-wins.md) | M |
-| 12 | [Store name → pocket suggestions](tasks/12-merchant-suggestions.md) | S |
-| 13 | [`createExpense` API (multi-pocket)](tasks/13-create-expense-api.md) | M |
-| 14 | [Split screen](tasks/14-split-ui.md) | M |
-| 15 | [Cover the shortfall](tasks/15-cover-shortfall.md) | S |
-| 16 | [Activity: grouped splits, group delete, Undo](tasks/16-activity-grouping-undo.md) | M |
-| 17 | [Accounts sheet + "paid with" on expenses](tasks/17-accounts-paid-with-api.md) | M |
-| 18 | [Paid-with chips + Accounts screen](tasks/18-paid-with-ui.md) | M |
-| 19 | [Cards on Home + card detail](tasks/19-card-view.md) | M |
-| 20 | [Mark statement paid](tasks/20-mark-paid.md) | M |
-| 21 | [Later: edit, refunds, earlier months](tasks/21-later.md) | — |
+1. Write `docs/v2/HANDOFF.md`:
+   ```
+   Task: T14
+   Done: applyRollover handles Carry and Reset; tests for both pass.
+   Left: Sweep rule + broken-target fallback; tests "two pockets sweep into one", "cents exact".
+   Failing now: none (or the test names)
+   Next command: node --test tests/rollover.test.js
+   ```
+2. Set the task's status to `doing` in PROGRESS.md.
+3. `git add -A && git commit -m "wip(T14): <one line>" && git push`. A WIP commit may contain
+   failing tests; that's what the `wip` prefix means.
 
-S = about a day, M = two to four days, for someone new to the code.
+## 4. Recovery
 
-## 6. Test Sheet, deploying and checking a milestone
+- **Last commit is `wip(TNN)`:** read HANDOFF.md and continue from "Left". When you finish, commit
+  `v2(TNN): …` as normal. The wip commit stays in history; that's fine.
+- **Dirty tree, no HANDOFF** (the last session died without warning):
+  1. Run the task's **Done-check** and **Verify**. If both pass, the work is finished: do steps
+     5–6 of §2.
+  2. Otherwise run `git diff --stat`. If under about 150 changed lines, read the diff and carry on.
+  3. If it's bigger or confusing, run `git stash push -u -m "abandoned TNN"` and start the task again
+     from a clean tree. Tasks are small enough to redo.
+- **Never** run `git push --force`, `git reset --hard` on pushed commits, or amend pushed commits.
 
-**Never develop against the couple's real Sheet.** Make a copy: open the real Sheet → File → Make a
-copy. The copy gets its own Apps Script project. Follow [`../DEPLOYMENT.md`](../DEPLOYMENT.md)
-sections 2–5 for the copy and use that URL and token in `npm run dev`.
+## 5. Rules (never break these)
 
-**Shipping a milestone** (the product owner does this, or you do it with them):
+1. **No pocket balance below zero.** Every money write re-reads the balance **inside the lock** and
+   refuses if the result would be negative.
+2. **The lock pattern.** Every handler that writes follows `createTransaction` in
+   `backend/05_Api.gs.js`: `verifyToken → validate → lock.tryLock → (rolloverIfDue) → re-read →
+   check → write → finally unlock(lock)`. `unlock` flushes before releasing.
+3. **Money is integer cents in the backend.** `parseAmountInput()` returns cents and `toDollars()`
+   converts back. Never add floats together.
+4. **Retries never double-spend.** Every money-moving action takes a `requestId`. If a row with
+   that id exists, return the original result with `duplicate: true` and write nothing.
+5. **The insufficient-funds text is exact:** `Insufficient funds in ${name}. Remaining:
+   ${money(balanceCents)}`, returned through `fail('INSUFFICIENT_FUNDS', …)`, as `createTransaction`
+   does. Copy that code; don't reword it.
+6. **Only `backend/03_Sheets.gs.js` touches `SpreadsheetApp`** (except the `flush` inside
+   `flushWrites`).
+7. **No `innerHTML` with user text.** Use `esc()` from `app/js/render.js` when building HTML
+   strings, or `textContent`.
+8. **Don't touch** the `text/plain` Content-Type in `app/js/api.js`, the generated `backend/*.gs`
+   files, `package.json` dependencies (there are none; keep it that way), `docs/RECOMMENDATIONS.md`,
+   or `docs/v2/mockups/`.
+9. **Old phones keep working.** Never remove or rename an existing API action or response field;
+   only add new ones.
+10. **CSS:** CI rebuilds Tailwind and fails if `app/tailwind.css` changes, and you can't rebuild it
+    offline. So only use Tailwind classes that already exist (`grep -c 'the-class' app/tailwind.css`
+    must be > 0). For anything else, add plain CSS to `app/styles.css` with a `pb-` class prefix.
+11. **Don't weaken existing tests.** If an existing test conflicts with your task, the task file
+    says so explicitly. If it doesn't, stop, write HANDOFF.md explaining the conflict, and commit
+    `wip`.
+12. **Put frontend logic in small exported pure functions** and test those. Keep DOM wiring thin.
 
-1. Merge the milestone's PRs to `master`. GitHub Pages publishes `app/` automatically.
-2. Download the `Backend.bundle.gs` artifact from the CI run, paste it into the **real** Apps Script
-   project, then **Deploy → Manage deployments → ✏️ → New version**. Skipping "new version" is the
-   most common reason a fix "doesn't work". See [`../DEPLOYMENT.md`](../DEPLOYMENT.md).
-3. Run `migrateV2()` once from the Apps Script editor (it is safe to run again).
-4. Bump `SERVER_VERSION` in `backend/00_Config.gs.js` and `CLIENT_VERSION` in `app/js/app.js`
-   together (`2.1.0` for M1, `2.2.0` for M2, and so on), so a phone with an old cached app shows
-   the "update available" banner.
-5. Run [`../SMOKE_TEST.md`](../SMOKE_TEST.md) plus the milestone checks listed at the bottom of
-   that milestone's last task. Each task that adds behaviour also adds its steps to the smoke test.
+## 6. Project map
 
-## 7. Keep it simple
+```
+app/index.html     every screen is a <section id="view-NAME" class="hidden">
+app/js/app.js      boot(); VIEWS list; switchView(views, tabs, name); refresh(); renderState()
+app/js/api.js      makeApi(): one method per backend action
+app/js/render.js   home HTML: pocketRowHtml, summaryHtml, activityRowHtml, esc()
+app/js/addform.js  add-expense form: mountAddForm()
+app/js/manage.js   pocket management: mountManage()
+app/js/format.js   formatMoney, parseAmountText, isValidAmount
+backend/00_Config.gs.js    SHEETS, ACTIONS, SERVER_VERSION, limits
+backend/01_Utils.gs.js     parseAmountInput (→cents), toDollars, money(cents), ok, fail, isValid*
+backend/02_Auth.gs.js      verifyToken, getUsers
+backend/03_Sheets.gs.js    all sheet reads and writes
+backend/04_Rollover.gs.js  monthKey, localParts, shouldRollover, applyRollover (pure)
+backend/05_Api.gs.js       handlers + HANDLERS map + handleRequest
+backend/06_Report.gs.js    Monthly_Report
+backend/07_Entry.gs.js     doGet/doPost, dailyRollover, setup()
+tests/helpers/             fakeSheet.js, fixtures.js (freshWorkbook), appsScriptGlobals.js, fakeBrowser.js
+```
 
-- Build what the task says. If something seems missing or wrong, **ask** before building more.
-- Prefer one more column or one more small function over a clever abstraction.
-- The mockups are the target for layout and wording. Where a task says it deliberately does less
-  than the mockup, follow the task.
-- If you're stuck for more than an hour, write down what you tried and ask.
+The household timezone is **UTC+2** (South Africa). `monthKey(date)` gives `YYYY-MM` in household time.
+
+### Recipes
+
+**A new API action:** add the name to `ACTIONS` (00_Config); write the handler and add it to
+`HANDLERS` (05_Api); add sheet I/O in 03_Sheets; add a method to `makeApi` (app/js/api.js); test the
+handler, plus one line in `tests/api-client.test.js` if that file covers each method.
+
+**A new screen:** add `<section id="view-NAME" class="hidden">` to `app/index.html`; add `'NAME'`
+to `VIEWS` in `app/js/app.js`; open it with `switchView(views, tabs, 'NAME')`. Screens without a tab
+need a Back button that goes to `'home'`.
+
+**Backend handler test:** copy the `setup()` helper at the top of `tests/money-path.test.js`. It
+builds a fake workbook (`freshWorkbook`), installs the fake Apps Script globals, and logs lock and
+flush events.
+
+**Fixed time in a test:** `t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-31T22:30:00Z') })`.
+That's 00:30 on 1 November in household time.
+
+**Mockups:** `docs/v2/mockups/NAME.html` gives the layout, wording, order and colours. Their CSS
+classes are **not** the app's; rebuild the layout using the app's existing patterns (rule 10).
+
+## 7. The v2 schema (single source of truth)
+
+New columns are always **appended**. Never insert columns or reorder them.
+
+**Pockets** (`SHEETS.POCKETS`): `A Pocket ID | B Pocket Name | C Bank Account | D Monthly Limit |
+E Current Balance | F Status` + v2: `G Leftover Rule` (`Carry`/`Reset`/`Sweep`; blank → `Reset`) ·
+`H Sweep To` (pocket id) · `I Carried In` (rands; blank → 0) · `J Kind` (`Spend`/`Savings`; blank → `Spend`).
+
+**Transactions:** `A Transaction ID | B Timestamp | C User / Spouse | D Pocket ID | E Amount |
+F Merchant / Note | G Request ID` + v2: `H Group ID` (blank = single-pocket expense) · `I Paid With`
+(account id).
+
+**Adjustments** (new): `A Adj ID (A1001…) | B Timestamp | C User | D Month (YYYY-MM) | E Type
+(transfer/carry/sweep/forfeit/card_payment) | F From Pocket | G To Pocket | H Amount | I Note |
+J Request ID | K Account ID`.
+
+**Accounts** (new): `A Account ID (AC01…) | B Name | C Type (bank/card/cash) | D Statement Day
+(1–28) | E Due Day (1–28) | F Credit Limit | G Status (Active/Archived)`.
+
+## 8. Decisions already made (don't revisit)
+
+- New pockets default to **Carry**, with no cap. Pockets that existed before v2 stay **Reset**.
+- Savings is an ordinary pocket (Kind `Savings`, limit R0, rule Carry), shown in its own section and
+  left out of the "Left this month" totals.
+- A split has at most **10 lines**. All its lines share one Group ID (= the first row's ID) and one
+  Paid With.
+- Paying a card **never** changes a pocket.
+- Undo for deletes is a 6-second delay on the phone before the delete is sent.
+- Editing earlier months is out of scope.

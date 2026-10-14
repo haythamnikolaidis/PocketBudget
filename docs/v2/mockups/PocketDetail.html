@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pocket detail</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+.scr{position:relative;width:390px;overflow:hidden;background:#0f172a;color:#f1f5f9;font-family:'Manrope',system-ui,sans-serif;font-variant-numeric:tabular-nums;font-size:14px;line-height:1.4}
+.h1{margin:0;font-size:22px;font-weight:800;letter-spacing:-0.01em}
+.sub{margin:0;font-size:13px;color:#94a3b8}
+.sec{margin:22px 0 4px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8}
+.meta{font-size:12px;color:#94a3b8}
+.ib{font:inherit;width:44px;height:44px;border-radius:12px;border:1px solid #334155;background:#1e293b;color:#f1f5f9;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.card{background:#1e293b;border-radius:16px;padding:16px}
+.bar{height:10px;border-radius:5px;background:#334155;display:flex;overflow:hidden}
+.f{background:#10b981}.c{background:#a7f3d0}
+.btn{font:inherit;font-size:15px;font-weight:800;min-height:48px;border:0;border-radius:14px;background:#10b981;color:#052e1f;flex:1}
+.btn2{font:inherit;font-size:15px;font-weight:700;min-height:48px;padding:0 16px;border-radius:14px;border:1px solid #475569;background:#0f172a;color:#f1f5f9;flex:1}
+.ln{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid #1e293b}
+.who{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#e2e8f0;color:#1e293b}
+.adj{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:rgba(167,243,208,.14);color:#a7f3d0}
+.amt{font-weight:800;white-space:nowrap}
+.rule{font:inherit;width:100%;text-align:left;display:flex;align-items:center;gap:12px;min-height:56px;padding:10px 14px;border-radius:14px;border:1px solid #334155;background:#0f172a;color:#f1f5f9}
+</style>
+</helmet>
+<div class="scr" style="height: 1000px; padding: 20px">
+  <div style="display: flex; align-items: center; gap: 12px">
+    <button class="ib" aria-label="Back"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg></button>
+    <div style="flex: 1">
+      <h1 class="h1">Groceries</h1>
+      <p class="sub">Funded from FNB Cheque · November</p>
+    </div>
+    <button class="ib" aria-label="Pocket settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"></path><circle cx="16" cy="7" r="2"></circle><circle cx="10" cy="17" r="2"></circle></svg></button>
+  </div>
+
+  <div class="card" style="margin-top: 16px">
+    <p class="meta" style="margin: 0">Left</p>
+    <p style="margin: 0; font-size: 34px; font-weight: 800; letter-spacing: -0.02em">R1,980.00</p>
+    <div class="bar" style="margin-top: 10px"><span class="f" style="width: 43%"></span><span class="c" style="width: 2.8%"></span></div>
+    <div style="margin-top: 14px; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 6px 12px; font-size: 13px">
+      <span class="meta">Monthly limit</span><span>R4,000.00</span>
+      <span class="meta">Carried in from October</span><span style="color: #a7f3d0">+ R120.00</span>
+      <span class="meta">Moved in</span><span style="color: #a7f3d0">+ R200.00</span>
+      <span class="meta">Spent (14 expenses)</span><span>− R2,340.00</span>
+      <span style="font-weight: 700; border-top: 1px solid #334155; padding-top: 6px">Left</span><span style="font-weight: 800; border-top: 1px solid #334155; padding-top: 6px">R1,980.00</span>
+    </div>
+  </div>
+
+  <div style="margin-top: 12px; display: flex; gap: 8px">
+    <button class="btn">Add expense</button>
+    <button class="btn2">Move money</button>
+  </div>
+
+  <h2 class="sec">At month end</h2>
+  <button class="rule">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a7f3d0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h13M13 6l6 6-6 6"></path></svg>
+    <span style="flex: 1"><strong style="display: block">Carry over</strong><span class="meta">Whatever is left on 30 Nov rolls into December</span></span>
+    <span class="meta">Change</span>
+  </button>
+
+  <h2 class="sec">This month</h2>
+  <div class="ln"><span class="who">Sam</span><span><span style="display: block; font-weight: 600">Checkers</span><span class="meta">Part of a R1,240 split · 14 Nov · Visa</span></span><span class="amt">R900.00</span></div>
+  <div class="ln"><span class="adj">Moved</span><span><span style="display: block; font-weight: 600">From Dining Out</span><span class="meta">"Big braai" · 13 Nov · Alex</span></span><span class="amt" style="color: #a7f3d0">+R200.00</span></div>
+  <div class="ln"><span class="who">Alex</span><span><span style="display: block; font-weight: 600">Woolworths</span><span class="meta">12 Nov · FNB Cheque</span></span><span class="amt">R486.20</span></div>
+  <div class="ln"><span class="who">Sam</span><span><span style="display: block; font-weight: 600">Fruit &amp; Veg City</span><span class="meta">9 Nov · Visa</span></span><span class="amt">R312.80</span></div>
+  <div class="ln"><span class="who">Alex</span><span><span style="display: block; font-weight: 600">Spar</span><span class="meta">5 Nov · Cash</span></span><span class="amt">R141.00</span></div>
+  <div class="ln"><span class="adj">Carried</span><span><span style="display: block; font-weight: 600">Left over from October</span><span class="meta">1 Nov · automatic</span></span><span class="amt" style="color: #a7f3d0">+R120.00</span></div>
+  <p class="meta" style="text-align: center; margin: 12px 0 0">Showing 6 of 16 · <strong style="color: #6ee7b7">Show all</strong></p>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
