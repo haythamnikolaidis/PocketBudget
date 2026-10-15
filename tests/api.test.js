@@ -153,6 +153,21 @@ test('getState returns pockets, transactions and summary in one payload', () => 
   restore();
 });
 
+test('getState month totals are right with 300 older rows and 3 from this month', () => {
+  const old = Array.from({ length: 300 }, (_, i) => [
+    'T' + (2000 + i), new Date('2026-08-15T10:00:00Z'), 'Alex', 'P01', 7, 'old ' + i,
+  ]);
+  const recent = [10, 20, 30].map((amt, i) => [
+    'T' + (3000 + i), new Date(`2026-10-0${i + 1}T10:00:00Z`), 'Alex', 'P01', amt, 'new ' + i,
+  ]);
+  const { restore } = withApi(SAMPLE_POCKETS, [...old, ...recent]);
+  const s = getState({ token: TOKEN, month: '2026-10' });
+  assert.equal(s.pockets[0].spent, 60);
+  assert.equal(s.transactions.length, 10);
+  assert.equal(s.transactions[0].id, 'T3002');
+  restore();
+});
+
 test('getState marks a depleted pocket as locked', () => {
   const { restore } = withApi([['P01', 'Groceries', 'Chase', 100, 0, 'Active']], []);
   assert.equal(getState({ token: TOKEN }).pockets[0].isLocked, true);

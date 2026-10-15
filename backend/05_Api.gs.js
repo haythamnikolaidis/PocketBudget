@@ -14,7 +14,7 @@ import {
 } from './01_Utils.gs.js';
 import { verifyToken, getUsers } from './02_Auth.gs.js';
 import {
-  readPockets, readTransactions, findPocketRow, writeBalance,
+  readPockets, readTransactions, readRecentTransactions, findPocketRow, writeBalance,
   appendTransaction, appendPocket, updatePocketRow, archivePocketRow,
   deleteTransactionRow, getTransactionRecord, findTransactionByRequestId, flushWrites,
 } from './03_Sheets.gs.js';
@@ -132,10 +132,9 @@ export function getState(params) {
   const archivedPockets = everyPocket
     .filter((p) => p.status === 'Archived')
     .map((p) => ({ id: p.id, name: p.name, account: p.account, limit: r2(p.limit) }));
-  // One read of the Transactions sheet, not two: it is sorted newest-first, so the
-  // feed is just its head. (This used to read and sort the whole sheet twice per
-  // refresh, on a sheet that only grows.)
-  const everyTransaction = readTransactions();
+  // Only the recent tail of the Transactions sheet is read (this month and newer, plus
+  // enough rows for the feed), sorted newest-first, so the feed is just its head.
+  const everyTransaction = readRecentTransactions({ month });
   const transactions = everyTransaction.slice(0, 10);
 
   const spentByPocket = {};
