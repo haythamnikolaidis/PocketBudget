@@ -172,6 +172,7 @@ export function createPocket(params) {
     return fail('BUSY', 'Another update is in progress. Please try again.');
   }
   try {
+    rolloverIfDue();
     const pocket = appendPocket({ name, account: String(params.account ?? '').trim(), limit: toDollars(limitCents) });
     return ok({ pocket: presentPocket(pocket) });
   } finally {
@@ -220,6 +221,7 @@ export function updatePocket(params) {
     return fail('BUSY', 'Another update is in progress. Please try again.');
   }
   try {
+    rolloverIfDue();
     const before = readPockets({ includeArchived: true }).find((p) => p.id === pocketId);
     const reopening = params.unarchive === true && Boolean(before) && before.status === 'Archived';
 
@@ -290,6 +292,7 @@ export function createTransaction(params) {
   }
 
   try {
+    rolloverIfDue();
     // A retry of something already recorded: answer with the original, change nothing.
     const prior = findTransactionByRequestId(requestId);
     if (prior) {
@@ -370,6 +373,7 @@ export function deleteTransaction(params) {
   }
 
   try {
+    rolloverIfDue();
     // Look first, change second. Deleting the row before the refund could lose the
     // transaction and then fail to give the money back.
     const record = getTransactionRecord(txnId);
