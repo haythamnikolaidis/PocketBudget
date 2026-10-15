@@ -147,12 +147,10 @@ Two phones submitting at the same moment must never produce a wrong balance.
 
 1. In Apps Script → Project Settings → Script Properties, set `LAST_ROLLOVER_KEY`
    to last month (e.g. `2026-01`)
-2. Run `dailyRollover()` from the editor
-3. Confirm the log says `reset N pockets`
-4. Confirm every **active** pocket is back to its full monthly limit
-5. Confirm **archived** pockets were not touched
-6. Run `dailyRollover()` again immediately — it must do **nothing** (idempotent)
-7. Confirm `Monthly_Report` has fresh rows
+2. Open the app on a phone or in the browser
+3. Confirm the balances reset on that first load
+4. Open the app again
+5. Confirm nothing changes on the second open
 
 ---
 

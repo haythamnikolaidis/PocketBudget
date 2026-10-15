@@ -55,7 +55,7 @@ test('booting an unconfigured app reveals the setup screen', async () => {
 test('booting a configured app reveals the home screen', async () => {
   const { boot } = await import('../app/js/app.js');
   const state = {
-    ok: true, version: '1.0.0', month: '2026-10',
+    ok: true, version: '2.1.0', month: '2026-10',
     pockets: [{ id: 'P01', name: 'Groceries', account: 'Chase', limit: 800, balance: 340.5, spent: 459.5, pctUsed: 57.44, isLocked: false }],
     transactions: [],
     summary: { totalLimit: 800, totalBalance: 340.5, totalSpent: 459.5, users: ['Alex', 'Sam'], month: '2026-10' },
