@@ -116,6 +116,16 @@ export function ping(params) {
 export function getState(params) {
   if (!verifyToken(params.token)) return fail('UNAUTHORIZED', 'Invalid or missing token.');
 
+  // The first read of a new month rolls it over; the nightly trigger is only a backup.
+  // When the month has not changed no lock is taken, so reads stay fast.
+  const props = PropertiesService.getScriptProperties();
+  if (shouldRollover(props.getProperty('LAST_ROLLOVER_KEY'))) {
+    const lock = LockService.getScriptLock();
+    if (lock.tryLock(LOCK_TIMEOUT_MS)) {
+      try { rolloverIfDue(); } finally { unlock(lock); }
+    } // busy: skip; the next request will do it
+  }
+
   const month = params.month || monthKey(new Date());
   const everyPocket = readPockets({ includeArchived: true });
   const pockets = everyPocket.filter((p) => p.status !== 'Archived');

@@ -167,10 +167,11 @@ export function setup() {
   for (const t of ScriptApp.getProjectTriggers()) {
     if (t.getHandlerFunction() === 'dailyRollover') ScriptApp.deleteTrigger(t);
   }
+  // Backup only: the first request of a month normally rolls over.
   ScriptApp.newTrigger('dailyRollover')
     .timeBased()
     .everyDays(1)
-    .atHour(2)
+    .atHour(0)
     .create();
 
   Logger.log('Sheets ready: ' + sheets.join(', '));
