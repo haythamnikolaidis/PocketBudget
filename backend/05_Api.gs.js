@@ -18,7 +18,7 @@ import {
   appendTransaction, appendPocket, updatePocketRow, archivePocketRow,
   deleteTransactionRow, getTransactionRecord, findTransactionByRequestId, flushWrites,
 } from './03_Sheets.gs.js';
-import { monthKey } from './04_Rollover.gs.js';
+import { monthKey, applyRollover, shouldRollover } from './04_Rollover.gs.js';
 
 /* --------------------------------------------------------------- helpers -- */
 
@@ -35,6 +35,41 @@ function unlock(lock) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/** Roll the month over if it has changed. CALLER MUST HOLD THE SCRIPT LOCK. Returns true if it rolled. */
+export function rolloverIfDue(now = new Date()) {
+  const props = PropertiesService.getScriptProperties();
+  const lastKey = props.getProperty('LAST_ROLLOVER_KEY');
+
+  if (!lastKey) {
+    // No record of ever rolling over: this is either a brand-new install or one set
+    // up before the key existed. Either way, resetting now would wipe whatever has
+    // been spent so far this month. Record the month and start rolling from the next.
+    props.setProperty('LAST_ROLLOVER_KEY', monthKey(now));
+    if (typeof Logger !== 'undefined') {
+      Logger.log('PocketBudget rollover: first run, recorded ' + monthKey(now) + ' without resetting.');
+    }
+    return false;
+  }
+  if (!shouldRollover(lastKey, now)) return false;
+
+  const pockets = readPockets({ includeArchived: true });
+  const { pockets: reset, resetCount } = applyRollover(pockets);
+  // Compare against the balance as it WAS. `reset` already holds balance ===
+  // limit for every active pocket, so testing `p.balance !== p.limit` on it
+  // would always be false and the rollover would write nothing to the sheet.
+  pockets.forEach((before, i) => {
+    const after = reset[i];
+    if (after.status === 'Active' && before.balance !== after.balance) {
+      writeBalance(after.id, after.balance);
+    }
+  });
+  props.setProperty('LAST_ROLLOVER_KEY', monthKey(now));
+  if (typeof Logger !== 'undefined') {
+    Logger.log('PocketBudget rollover: reset ' + resetCount + ' pockets for ' + monthKey(now));
+  }
+  return true;
 }
 
 /**

@@ -6,14 +6,13 @@
 // spreadsheets.currentonly (NOT .../auth/spreadsheets) because this script only
 // ever touches its own bound sheet — ask for the narrowest scope that works.
 
-import { handleRequest } from './05_Api.gs.js';
+import { handleRequest, rolloverIfDue } from './05_Api.gs.js';
 import { verifyToken, getApiToken, setApiToken, getUsers } from './02_Auth.gs.js';
 import {
   readPockets, readTransactions, getReportSheet, ensureSheets, flushWrites,
 } from './03_Sheets.gs.js';
-import { applyRollover, shouldRollover, monthKey } from './04_Rollover.gs.js';
+import { shouldRollover, monthKey } from './04_Rollover.gs.js';
 import { renderReport } from './06_Report.gs.js';
-import { writeBalance } from './03_Sheets.gs.js';
 import { USERS, USERS_PROPERTY, SHEETS, LOCK_TIMEOUT_MS } from './00_Config.gs.js';
 
 /** Serialize a response as ContentService JSON. */
@@ -104,19 +103,7 @@ export function dailyRollover() {
       throw new Error('Rollover postponed: could not get the script lock.');
     }
     try {
-      const pockets = readPockets({ includeArchived: true });
-      const { pockets: reset, resetCount } = applyRollover(pockets);
-      // Compare against the balance as it WAS. `reset` already holds balance ===
-      // limit for every active pocket, so testing `p.balance !== p.limit` on it
-      // was always false and the rollover wrote nothing to the sheet.
-      pockets.forEach((before, i) => {
-        const after = reset[i];
-        if (after.status === 'Active' && before.balance !== after.balance) {
-          writeBalance(after.id, after.balance);
-        }
-      });
-      props.setProperty('LAST_ROLLOVER_KEY', monthKey(now));
-      Logger.log('PocketBudget rollover: reset ' + resetCount + ' pockets for ' + monthKey(now));
+      rolloverIfDue(now);
     } finally {
       try {
         flushWrites();

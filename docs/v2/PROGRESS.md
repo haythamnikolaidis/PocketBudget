@@ -8,7 +8,7 @@ Type `HUMAN` = the agent stops there and a person deploys and checks the milesto
 
 | ID | Task | Milestone | Type | Status |
 |---|---|---|---|---|
-| T01 | [Move the rollover into a reusable `rolloverIfDue()`](tasks/T01-extract-rollover.md) | M1 | backend | todo |
+| T01 | [Move the rollover into a reusable `rolloverIfDue()`](tasks/T01-extract-rollover.md) | M1 | backend | done |
 | T02 | [Run the rollover before every write](tasks/T02-rollover-in-writes.md) | M1 | backend | todo |
 | T03 | [Roll over on the first read of a month; trigger at midnight](tasks/T03-rollover-in-getstate.md) | M1 | backend | todo |
 | T04 | [Add `readRecentTransactions()`](tasks/T04-read-recent-transactions.md) | M1 | backend | todo |
