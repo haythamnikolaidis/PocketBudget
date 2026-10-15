@@ -29,4 +29,9 @@ export const SAMPLE_TXNS = [
   ['T1002', new Date('2026-10-01T18:45:00Z'), 'Sam', 'P02', 42, 'Pizza Night'],
 ];
 
+/** A full 10-cell v2 pocket row. */
+export function v2Pocket({ id, name, limit, balance, account = '', status = 'Active', rule = 'Carry', sweepTo = '', carriedIn = 0, kind = 'Spend' }) {
+  return [id, name, account, limit, balance, status, rule, sweepTo, carriedIn, kind];
+}
+
 export { createSheet, resetSheet };

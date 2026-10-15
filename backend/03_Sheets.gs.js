@@ -2,6 +2,7 @@
 // CANONICAL SOURCE. The ONLY module that touches SpreadsheetApp.
 
 import { SHEETS, REQUEST_ID_LOOKBACK_ROWS } from './00_Config.gs.js';
+import { monthKey } from './04_Rollover.gs.js';
 import { nextPocketId, nextTransactionId, isValidPocketId, balanceAfterLimitChange, escapeCell } from './01_Utils.gs.js';
 
 /** Script Properties holding the highest pocket / transaction number ever issued. */
@@ -69,28 +70,63 @@ export function readPockets({ includeArchived = false } = {}) {
     limit: num(r[3]),
     balance: num(r[4]),
     status: String(r[5] || 'Active'),
+    rule: String(r[6] || 'Reset'),
+    sweepTo: String(r[7] || ''),
+    carriedIn: num(r[8]),
+    kind: String(r[9] || 'Spend'),
   })).filter((p) => includeArchived || p.status !== 'Archived');
 }
 
-/** Transactions newest-first, optionally capped. */
-export function readTransactions({ limit = 0 } = {}) {
-  const txns = dataRows(getTransactionSheet()).map((r) => ({
+function toTxn(r) {
+  return {
     id: String(r[0]),
     timestamp: isoDate(r[1]),
     user: String(r[2]),
     pocketId: String(r[3]),
     amount: num(r[4]),
     note: String(r[5] || ''),
-  }));
-  // Newest first; equal timestamps fall back to the ID NUMBER (a string compare
-  // would put T10000 before T9999).
+  };
+}
+
+/**
+ * Newest first; equal timestamps fall back to the ID NUMBER (a string compare
+ * would put T10000 before T9999).
+ */
+function sortNewestFirst(txns) {
   const idNumber = (id) => Number(String(id).replace(/\D/g, '')) || 0;
-  txns.sort((a, b) => {
+  return txns.sort((a, b) => {
     const at = a.timestamp || '', bt = b.timestamp || '';
     if (at === bt) return idNumber(b.id) - idNumber(a.id);
     return bt.localeCompare(at);
   });
+}
+
+/** Transactions newest-first, optionally capped. */
+export function readTransactions({ limit = 0 } = {}) {
+  const txns = sortNewestFirst(dataRows(getTransactionSheet()).map(toTxn));
   return limit > 0 ? txns.slice(0, limit) : txns;
+}
+
+/** Newest-first transactions: every row of `month` (YYYY-MM) and newer, and at least `minRows` rows. */
+export function readRecentTransactions({ month, minRows = 30, chunk = 200 } = {}) {
+  const sheet = getTransactionSheet();
+  const width = Math.max(7, sheet.getLastColumn());
+  const collected = [];
+  let sawOlder = false;
+  let hi = sheet.getLastRow();
+  while (hi >= 2) {
+    const lo = Math.max(2, hi - chunk + 1);
+    const values = sheet.getRange(lo, 1, hi - lo + 1, width).getValues();
+    for (const r of values) {
+      if (!r.some((c) => c !== '' && c != null)) continue;
+      const txn = toTxn(r);
+      if (txn.timestamp && monthKey(new Date(txn.timestamp)) < month) sawOlder = true;
+      collected.push(txn);
+    }
+    if (collected.length >= minRows && sawOlder) break;
+    hi = lo - 1;
+  }
+  return sortNewestFirst(collected);
 }
 
 /** 1-based sheet row for a pocket ID (header is row 1), or 0 if not found. */
@@ -279,4 +315,71 @@ export function ensureSheets() {
     created.push(name);
   }
   return created;
+}
+
+/** v2 columns appended to existing sheets: [1-based column, header]. */
+const V2_APPENDED_HEADERS = {
+  [SHEETS.POCKETS]: [[7, 'Leftover Rule'], [8, 'Sweep To'], [9, 'Carried In'], [10, 'Kind']],
+  [SHEETS.TRANSACTIONS]: [[8, 'Group ID'], [9, 'Paid With']],
+};
+
+/** v2 sheets that do not exist in an older workbook, with their full headers. */
+const V2_NEW_SHEETS = {
+  [SHEETS.ADJUSTMENTS]: [
+    'Adj ID', 'Timestamp', 'User', 'Month', 'Type', 'From Pocket', 'To Pocket',
+    'Amount', 'Note', 'Request ID', 'Account ID',
+  ],
+  [SHEETS.ACCOUNTS]: [
+    'Account ID', 'Name', 'Type', 'Statement Day', 'Due Day', 'Credit Limit', 'Status',
+  ],
+};
+
+/**
+ * Bring an existing workbook up to the v2 schema: append the new headers and
+ * create the new sheets. Idempotent; a header cell is only written when blank.
+ * Returns a description of each change actually made.
+ */
+export function ensureV2Schema() {
+  const changes = [];
+
+  for (const [name, columns] of Object.entries(V2_APPENDED_HEADERS)) {
+    const sheet = ss().getSheetByName(name);
+    if (!sheet) throw new Error('Missing sheet: ' + name);
+    for (const [col, header] of columns) {
+      if (sheet.getRange(1, col).getValues()[0][0] === '') {
+        sheet.getRange(1, col).setValue(header);
+        changes.push(name + ': added header ' + header);
+      }
+    }
+  }
+
+  const pockets = ss().getSheetByName(SHEETS.POCKETS);
+  const pocketRows = pockets.getLastRow() - 1;
+  if (pocketRows > 0) {
+    const range = pockets.getRange(2, 7, pocketRows, 4);
+    const values = range.getValues();
+    const defaults = ['Reset', null, 0, 'Spend'];
+    let filled = 0;
+    for (const row of values) {
+      let touched = false;
+      defaults.forEach((d, i) => {
+        if (d !== null && row[i] === '') { row[i] = d; touched = true; }
+      });
+      if (touched) filled++;
+    }
+    if (filled > 0) {
+      range.setValues(values);
+      changes.push('Pockets: filled defaults on ' + filled + ' rows');
+    }
+  }
+
+  for (const [name, headers] of Object.entries(V2_NEW_SHEETS)) {
+    if (ss().getSheetByName(name)) continue;
+    const sheet = ss().insertSheet(name);
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(1);
+    changes.push('Created sheet ' + name);
+  }
+
+  return changes;
 }

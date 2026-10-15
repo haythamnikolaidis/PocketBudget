@@ -143,6 +143,7 @@ users until you redeploy:
 
 1. Paste the new `Backend.bundle.gs` into `Code.gs` and save.
 2. **Deploy → Manage deployments → ✏️ (pencil) → Version: New version → Deploy**.
+3. If the release notes say so, run `migrateV2()` once from the editor (safe to repeat).
 
 Skipping this is the single most common reason a fix appears not to work.
 

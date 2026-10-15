@@ -68,6 +68,7 @@ test('appendPocket opens a pocket at balance === limit and returns its id', () =
   assert.deepEqual(stored, {
     id: p.id, name: 'Fuel', account: 'Chase Checking',
     limit: 200, balance: 200, status: 'Active',
+    rule: 'Reset', sweepTo: '', carriedIn: 0, kind: 'Spend',
   });
   restore();
 });

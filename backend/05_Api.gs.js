@@ -14,11 +14,11 @@ import {
 } from './01_Utils.gs.js';
 import { verifyToken, getUsers } from './02_Auth.gs.js';
 import {
-  readPockets, readTransactions, findPocketRow, writeBalance,
+  readPockets, readTransactions, readRecentTransactions, findPocketRow, writeBalance,
   appendTransaction, appendPocket, updatePocketRow, archivePocketRow,
   deleteTransactionRow, getTransactionRecord, findTransactionByRequestId, flushWrites,
 } from './03_Sheets.gs.js';
-import { monthKey } from './04_Rollover.gs.js';
+import { monthKey, applyRollover, shouldRollover } from './04_Rollover.gs.js';
 
 /* --------------------------------------------------------------- helpers -- */
 
@@ -35,6 +35,41 @@ function unlock(lock) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/** Roll the month over if it has changed. CALLER MUST HOLD THE SCRIPT LOCK. Returns true if it rolled. */
+export function rolloverIfDue(now = new Date()) {
+  const props = PropertiesService.getScriptProperties();
+  const lastKey = props.getProperty('LAST_ROLLOVER_KEY');
+
+  if (!lastKey) {
+    // No record of ever rolling over: this is either a brand-new install or one set
+    // up before the key existed. Either way, resetting now would wipe whatever has
+    // been spent so far this month. Record the month and start rolling from the next.
+    props.setProperty('LAST_ROLLOVER_KEY', monthKey(now));
+    if (typeof Logger !== 'undefined') {
+      Logger.log('PocketBudget rollover: first run, recorded ' + monthKey(now) + ' without resetting.');
+    }
+    return false;
+  }
+  if (!shouldRollover(lastKey, now)) return false;
+
+  const pockets = readPockets({ includeArchived: true });
+  const { pockets: reset, resetCount } = applyRollover(pockets);
+  // Compare against the balance as it WAS. `reset` already holds balance ===
+  // limit for every active pocket, so testing `p.balance !== p.limit` on it
+  // would always be false and the rollover would write nothing to the sheet.
+  pockets.forEach((before, i) => {
+    const after = reset[i];
+    if (after.status === 'Active' && before.balance !== after.balance) {
+      writeBalance(after.id, after.balance);
+    }
+  });
+  props.setProperty('LAST_ROLLOVER_KEY', monthKey(now));
+  if (typeof Logger !== 'undefined') {
+    Logger.log('PocketBudget rollover: reset ' + resetCount + ' pockets for ' + monthKey(now));
+  }
+  return true;
 }
 
 /**
@@ -81,16 +116,25 @@ export function ping(params) {
 export function getState(params) {
   if (!verifyToken(params.token)) return fail('UNAUTHORIZED', 'Invalid or missing token.');
 
+  // The first read of a new month rolls it over; the nightly trigger is only a backup.
+  // When the month has not changed no lock is taken, so reads stay fast.
+  const props = PropertiesService.getScriptProperties();
+  if (shouldRollover(props.getProperty('LAST_ROLLOVER_KEY'))) {
+    const lock = LockService.getScriptLock();
+    if (lock.tryLock(LOCK_TIMEOUT_MS)) {
+      try { rolloverIfDue(); } finally { unlock(lock); }
+    } // busy: skip; the next request will do it
+  }
+
   const month = params.month || monthKey(new Date());
   const everyPocket = readPockets({ includeArchived: true });
   const pockets = everyPocket.filter((p) => p.status !== 'Archived');
   const archivedPockets = everyPocket
     .filter((p) => p.status === 'Archived')
     .map((p) => ({ id: p.id, name: p.name, account: p.account, limit: r2(p.limit) }));
-  // One read of the Transactions sheet, not two: it is sorted newest-first, so the
-  // feed is just its head. (This used to read and sort the whole sheet twice per
-  // refresh, on a sheet that only grows.)
-  const everyTransaction = readTransactions();
+  // Only the recent tail of the Transactions sheet is read (this month and newer, plus
+  // enough rows for the feed), sorted newest-first, so the feed is just its head.
+  const everyTransaction = readRecentTransactions({ month });
   const transactions = everyTransaction.slice(0, 10);
 
   const spentByPocket = {};
@@ -137,6 +181,7 @@ export function createPocket(params) {
     return fail('BUSY', 'Another update is in progress. Please try again.');
   }
   try {
+    rolloverIfDue();
     const pocket = appendPocket({ name, account: String(params.account ?? '').trim(), limit: toDollars(limitCents) });
     return ok({ pocket: presentPocket(pocket) });
   } finally {
@@ -185,6 +230,7 @@ export function updatePocket(params) {
     return fail('BUSY', 'Another update is in progress. Please try again.');
   }
   try {
+    rolloverIfDue();
     const before = readPockets({ includeArchived: true }).find((p) => p.id === pocketId);
     const reopening = params.unarchive === true && Boolean(before) && before.status === 'Archived';
 
@@ -255,6 +301,7 @@ export function createTransaction(params) {
   }
 
   try {
+    rolloverIfDue();
     // A retry of something already recorded: answer with the original, change nothing.
     const prior = findTransactionByRequestId(requestId);
     if (prior) {
@@ -335,6 +382,7 @@ export function deleteTransaction(params) {
   }
 
   try {
+    rolloverIfDue();
     // Look first, change second. Deleting the row before the refund could lose the
     // transaction and then fail to give the money back.
     const record = getTransactionRecord(txnId);

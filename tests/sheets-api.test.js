@@ -32,6 +32,7 @@ test('readPockets returns typed objects and skips blank rows', () => {
   assert.deepEqual(pockets[0], {
     id: 'P01', name: 'Groceries', account: 'Chase Checking',
     limit: 800, balance: 340.5, status: 'Active',
+    rule: 'Reset', sweepTo: '', carriedIn: 0, kind: 'Spend',
   });
   restore();
 });

@@ -334,7 +334,7 @@ const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36'
   + ' (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
 
 const STATE = {
-  version: '1.0.0',
+  version: '2.1.0',
   serverTime: '2026-10-01T09:40:00.000Z',
   month: '2026-10',
   pockets: [
@@ -355,7 +355,7 @@ function fakeApi({ state = STATE, pingError = null, stateError = null } = {}) {
     ping: async () => {
       calls.ping += 1;
       if (pingError) throw pingError;
-      return { ok: true, version: '1.0.0', serverTime: '2026-10-01T09:40:00.000Z' };
+      return { ok: true, version: '2.1.0', serverTime: '2026-10-01T09:40:00.000Z' };
     },
     getState: async () => {
       calls.getState += 1;
@@ -509,8 +509,8 @@ test('isServerStale tolerates missing or blank versions without shouting', () =>
   assert.equal(isServerStale('1.0.0', undefined), false);
 });
 
-test('CLIENT_VERSION is 1.0.0, matching SERVER_VERSION', () => {
-  assert.equal(CLIENT_VERSION, '1.0.0');
+test('CLIENT_VERSION is 2.1.0, matching SERVER_VERSION', () => {
+  assert.equal(CLIENT_VERSION, '2.1.0');
 });
 
 /* ------------------------------------------------------- install prompt -- */
@@ -1230,7 +1230,7 @@ test('the real makeApi + makeConfig drive boot end to end over a fake fetch', as
     requests.push({ url: String(url), init });
     const action = init && init.body ? JSON.parse(init.body).action : '';
     // api.js unwraps an { ok } envelope, so the fake MUST send one.
-    const payload = action === 'getState' ? { ok: true, ...STATE } : { ok: true, version: '1.0.0' };
+    const payload = action === 'getState' ? { ok: true, ...STATE } : { ok: true, version: '2.1.0' };
     return { ok: true, status: 200, json: async () => payload };
   };
 
