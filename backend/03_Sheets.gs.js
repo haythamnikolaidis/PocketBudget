@@ -2,6 +2,7 @@
 // CANONICAL SOURCE. The ONLY module that touches SpreadsheetApp.
 
 import { SHEETS, REQUEST_ID_LOOKBACK_ROWS } from './00_Config.gs.js';
+import { monthKey } from './04_Rollover.gs.js';
 import { nextPocketId, nextTransactionId, isValidPocketId, balanceAfterLimitChange, escapeCell } from './01_Utils.gs.js';
 
 /** Script Properties holding the highest pocket / transaction number ever issued. */
@@ -72,25 +73,56 @@ export function readPockets({ includeArchived = false } = {}) {
   })).filter((p) => includeArchived || p.status !== 'Archived');
 }
 
-/** Transactions newest-first, optionally capped. */
-export function readTransactions({ limit = 0 } = {}) {
-  const txns = dataRows(getTransactionSheet()).map((r) => ({
+function toTxn(r) {
+  return {
     id: String(r[0]),
     timestamp: isoDate(r[1]),
     user: String(r[2]),
     pocketId: String(r[3]),
     amount: num(r[4]),
     note: String(r[5] || ''),
-  }));
-  // Newest first; equal timestamps fall back to the ID NUMBER (a string compare
-  // would put T10000 before T9999).
+  };
+}
+
+/**
+ * Newest first; equal timestamps fall back to the ID NUMBER (a string compare
+ * would put T10000 before T9999).
+ */
+function sortNewestFirst(txns) {
   const idNumber = (id) => Number(String(id).replace(/\D/g, '')) || 0;
-  txns.sort((a, b) => {
+  return txns.sort((a, b) => {
     const at = a.timestamp || '', bt = b.timestamp || '';
     if (at === bt) return idNumber(b.id) - idNumber(a.id);
     return bt.localeCompare(at);
   });
+}
+
+/** Transactions newest-first, optionally capped. */
+export function readTransactions({ limit = 0 } = {}) {
+  const txns = sortNewestFirst(dataRows(getTransactionSheet()).map(toTxn));
   return limit > 0 ? txns.slice(0, limit) : txns;
+}
+
+/** Newest-first transactions: every row of `month` (YYYY-MM) and newer, and at least `minRows` rows. */
+export function readRecentTransactions({ month, minRows = 30, chunk = 200 } = {}) {
+  const sheet = getTransactionSheet();
+  const width = Math.max(7, sheet.getLastColumn());
+  const collected = [];
+  let sawOlder = false;
+  let hi = sheet.getLastRow();
+  while (hi >= 2) {
+    const lo = Math.max(2, hi - chunk + 1);
+    const values = sheet.getRange(lo, 1, hi - lo + 1, width).getValues();
+    for (const r of values) {
+      if (!r.some((c) => c !== '' && c != null)) continue;
+      const txn = toTxn(r);
+      if (txn.timestamp && monthKey(new Date(txn.timestamp)) < month) sawOlder = true;
+      collected.push(txn);
+    }
+    if (collected.length >= minRows && sawOlder) break;
+    hi = lo - 1;
+  }
+  return sortNewestFirst(collected);
 }
 
 /** 1-based sheet row for a pocket ID (header is row 1), or 0 if not found. */
