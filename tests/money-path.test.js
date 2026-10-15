@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { createTransaction, createPocket, deleteTransaction, updatePocket, handleRequest } from '../backend/05_Api.gs.js';
 import { dailyRollover, setup as setupFn } from '../backend/07_Entry.gs.js';
 import { installGlobals, createProps } from './helpers/appsScriptGlobals.js';
-import { freshWorkbook } from './helpers/fixtures.js';
+import { freshWorkbook, createSheet } from './helpers/fixtures.js';
 
 const TOKEN = 'test-token';
 const RID = 'req-0001-aaaa';
@@ -23,6 +23,7 @@ function setup({ pockets = [['P01', 'Groceries', 'Chase', 800, 100, 'Active']], 
   const wb = freshWorkbook(pockets, txns);
   const ss = {
     getSheetByName: (n) => (n === 'Pockets' ? wb.pockets : n === 'Transactions' ? wb.txns : n === 'Monthly_Report' ? wb.report : null),
+    insertSheet: (n) => createSheet(n, []),
   };
   const events = [];
   let held = false;

@@ -16,6 +16,8 @@ export const SHEETS = {
   POCKETS: 'Pockets',
   TRANSACTIONS: 'Transactions',
   REPORT: 'Monthly_Report',
+  ADJUSTMENTS: 'Adjustments',
+  ACCOUNTS: 'Accounts',
 };
 
 /** Every action the API dispatcher accepts. */

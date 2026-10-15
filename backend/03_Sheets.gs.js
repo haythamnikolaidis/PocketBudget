@@ -312,3 +312,50 @@ export function ensureSheets() {
   }
   return created;
 }
+
+/** v2 columns appended to existing sheets: [1-based column, header]. */
+const V2_APPENDED_HEADERS = {
+  [SHEETS.POCKETS]: [[7, 'Leftover Rule'], [8, 'Sweep To'], [9, 'Carried In'], [10, 'Kind']],
+  [SHEETS.TRANSACTIONS]: [[8, 'Group ID'], [9, 'Paid With']],
+};
+
+/** v2 sheets that do not exist in an older workbook, with their full headers. */
+const V2_NEW_SHEETS = {
+  [SHEETS.ADJUSTMENTS]: [
+    'Adj ID', 'Timestamp', 'User', 'Month', 'Type', 'From Pocket', 'To Pocket',
+    'Amount', 'Note', 'Request ID', 'Account ID',
+  ],
+  [SHEETS.ACCOUNTS]: [
+    'Account ID', 'Name', 'Type', 'Statement Day', 'Due Day', 'Credit Limit', 'Status',
+  ],
+};
+
+/**
+ * Bring an existing workbook up to the v2 schema: append the new headers and
+ * create the new sheets. Idempotent; a header cell is only written when blank.
+ * Returns a description of each change actually made.
+ */
+export function ensureV2Schema() {
+  const changes = [];
+
+  for (const [name, columns] of Object.entries(V2_APPENDED_HEADERS)) {
+    const sheet = ss().getSheetByName(name);
+    if (!sheet) throw new Error('Missing sheet: ' + name);
+    for (const [col, header] of columns) {
+      if (sheet.getRange(1, col).getValues()[0][0] === '') {
+        sheet.getRange(1, col).setValue(header);
+        changes.push(name + ': added header ' + header);
+      }
+    }
+  }
+
+  for (const [name, headers] of Object.entries(V2_NEW_SHEETS)) {
+    if (ss().getSheetByName(name)) continue;
+    const sheet = ss().insertSheet(name);
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(1);
+    changes.push('Created sheet ' + name);
+  }
+
+  return changes;
+}

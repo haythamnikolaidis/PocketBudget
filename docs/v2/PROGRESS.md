@@ -13,7 +13,7 @@ Type `HUMAN` = the agent stops there and a person deploys and checks the milesto
 | T03 | [Roll over on the first read of a month; trigger at midnight](tasks/T03-rollover-in-getstate.md) | M1 | backend | done |
 | T04 | [Add `readRecentTransactions()`](tasks/T04-read-recent-transactions.md) | M1 | backend | done |
 | T05 | [Use `readRecentTransactions` in `getState`](tasks/T05-getstate-recent.md) | M1 | backend | done |
-| T06 | [Schema: new headers, new sheets, `migrateV2()`](tasks/T06-schema-sheets.md) | M1 | backend | todo |
+| T06 | [Schema: new headers, new sheets, `migrateV2()`](tasks/T06-schema-sheets.md) | M1 | backend | done |
 | T07 | [Pocket defaults + v2 fields in `readPockets`](tasks/T07-pocket-v2-fields.md) | M1 | backend | todo |
 | T08 | [M1 release prep](tasks/T08-m1-release.md) | M1 | docs | todo |
 | T09 | [HUMAN: deploy and check M1](tasks/T09-m1-human.md) | M1 | HUMAN | todo |

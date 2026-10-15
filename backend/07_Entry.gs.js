@@ -9,7 +9,7 @@
 import { handleRequest, rolloverIfDue } from './05_Api.gs.js';
 import { verifyToken, getApiToken, setApiToken, getUsers } from './02_Auth.gs.js';
 import {
-  readPockets, readTransactions, getReportSheet, ensureSheets, flushWrites,
+  readPockets, readTransactions, getReportSheet, ensureSheets, ensureV2Schema, flushWrites,
 } from './03_Sheets.gs.js';
 import { shouldRollover, monthKey } from './04_Rollover.gs.js';
 import { renderReport } from './06_Report.gs.js';
@@ -142,6 +142,16 @@ function onOpen() {
 }
 
 /**
+ * Upgrade an existing workbook to the v2 schema. Run once from the Apps Script
+ * editor; safe to run again, in which case it reports nothing to do.
+ */
+export function migrateV2() {
+  const changes = ensureV2Schema();
+  Logger.log('PocketBudget migrateV2: ' + (changes.join('; ') || 'nothing to do'));
+  return changes;
+}
+
+/**
  * One-time bootstrap, run from the Apps Script editor:
  *   1. Setup ▸ copy this function, paste into 07_Entry.gs.js, save.
  *   2. Run setup() once and authorise.
@@ -149,6 +159,7 @@ function onOpen() {
  */
 export function setup() {
   const sheets = ensureSheets();
+  migrateV2();
   const existing = getApiToken();
   const token = existing || Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
   if (!existing) setApiToken(token);
