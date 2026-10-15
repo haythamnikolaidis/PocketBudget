@@ -70,6 +70,10 @@ export function readPockets({ includeArchived = false } = {}) {
     limit: num(r[3]),
     balance: num(r[4]),
     status: String(r[5] || 'Active'),
+    rule: String(r[6] || 'Reset'),
+    sweepTo: String(r[7] || ''),
+    carriedIn: num(r[8]),
+    kind: String(r[9] || 'Spend'),
   })).filter((p) => includeArchived || p.status !== 'Archived');
 }
 
@@ -346,6 +350,26 @@ export function ensureV2Schema() {
         sheet.getRange(1, col).setValue(header);
         changes.push(name + ': added header ' + header);
       }
+    }
+  }
+
+  const pockets = ss().getSheetByName(SHEETS.POCKETS);
+  const pocketRows = pockets.getLastRow() - 1;
+  if (pocketRows > 0) {
+    const range = pockets.getRange(2, 7, pocketRows, 4);
+    const values = range.getValues();
+    const defaults = ['Reset', null, 0, 'Spend'];
+    let filled = 0;
+    for (const row of values) {
+      let touched = false;
+      defaults.forEach((d, i) => {
+        if (d !== null && row[i] === '') { row[i] = d; touched = true; }
+      });
+      if (touched) filled++;
+    }
+    if (filled > 0) {
+      range.setValues(values);
+      changes.push('Pockets: filled defaults on ' + filled + ' rows');
     }
   }
 
