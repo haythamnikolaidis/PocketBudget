@@ -156,6 +156,16 @@ export function nextTransactionId(existingIds, lastIssued = 0) {
   return 'T' + String(Math.max(max + 1, start + 1)).padStart(4, '0');
 }
 
+/** Same as `nextTransactionId`, for the Adjustments sheet: A1001, A1002, ... */
+export function nextAdjustmentId(existingIds, lastIssued = 0) {
+  const max = existingIds.reduce((m, id) => {
+    if (typeof id !== 'string' || !/^A\d+$/.test(id)) return m;
+    const n = parseInt(id.slice(1), 10);
+    return Number.isFinite(n) && n > m ? n : m;
+  }, Math.max(0, Number(lastIssued) || 0));
+  return 'A' + String(Math.max(max + 1, 1001)).padStart(4, '0');
+}
+
 /* --------------------------------------------------------------- envelope -- */
 
 /** Success envelope. Always `ok: true`, always version-stamped. */
