@@ -20,6 +20,8 @@ import {
   renderSavings,
   renderActivity,
   monthEndCardHtml,
+  monthEndReviewHtml,
+  resetBannerHtml,
 } from '../app/js/render.js';
 
 /* ------------------------------------------------------------- fixtures -- */
@@ -790,4 +792,82 @@ test('monthEndCardHtml: escapes names', () => {
   assert.ok(!html.includes('<img'));
   assert.ok(!html.includes('<b>'));
   assert.match(html, /&lt;img src=x&gt;/);
+});
+
+/* ------------------------------------------------- month-end review -- */
+
+const REVIEW = {
+  fromMonth: '2026-10',
+  items: [
+    { pocketId: 'P01', name: 'Car Service', type: 'carry', amount: 3000, toPocketId: '', toName: '' },
+    { pocketId: 'P02', name: 'Dining Out', type: 'sweep', amount: 45, toPocketId: 'P09', toName: 'Savings' },
+    { pocketId: 'P03', name: 'Petrol', type: 'forfeit', amount: 30, toPocketId: '', toName: '' },
+  ],
+  totals: { carried: 3000, swept: 45, forfeited: 30, all: 3075 },
+};
+
+const REVIEW_POCKETS = [
+  { id: 'P01', name: 'Car Service', kind: 'Spend', rule: 'Carry' },
+  { id: 'P03', name: 'Petrol', kind: 'Spend', rule: 'Reset' },
+  { id: 'P04', name: 'Kids', kind: 'Spend', rule: 'Reset' },
+  { id: 'P09', name: 'Savings', kind: 'Savings', rule: 'Reset' },
+];
+
+test('monthEndReviewHtml: one row per item with the right wording', () => {
+  const { list } = monthEndReviewHtml(REVIEW, REVIEW_POCKETS);
+  assert.equal((list.match(/pb-merev__row/g) || []).length, 3);
+  assert.match(list, /Car Service[\s\S]*R3,000[\s\S]*Carried into November/);
+  assert.match(list, /Dining Out[\s\S]*R45[\s\S]*Swept to Savings/);
+  assert.match(list, /Petrol[\s\S]*R30[\s\S]*Lost at reset/);
+});
+
+test('monthEndReviewHtml: Move buttons target the pocket now holding the money', () => {
+  const { list } = monthEndReviewHtml(REVIEW, REVIEW_POCKETS);
+  const buttons = list.match(/data-action="monthend-move" data-pocket-id="[^"]*"/g) || [];
+  assert.deepEqual(buttons, [
+    'data-action="monthend-move" data-pocket-id="P01"',
+    'data-action="monthend-move" data-pocket-id="P09"',
+  ]);
+});
+
+test('monthEndReviewHtml: totals for carried, savings and reset', () => {
+  const { totals } = monthEndReviewHtml(REVIEW, REVIEW_POCKETS);
+  assert.match(totals, /Carried[\s\S]*R3,000/);
+  assert.match(totals, /To Savings[\s\S]*R45/);
+  assert.match(totals, /Reset[\s\S]*R30/);
+});
+
+test('monthEndReviewHtml: December rolls into January and names are escaped', () => {
+  const { list } = monthEndReviewHtml({
+    fromMonth: '2026-12',
+    items: [{ pocketId: 'P1', name: '<img src=x>', type: 'carry', amount: 5 }],
+    totals: {},
+  }, []);
+  assert.match(list, /Carried into January/);
+  assert.ok(!list.includes('<img'));
+  assert.match(list, /&lt;img src=x&gt;/);
+});
+
+test('monthEndReviewHtml: nothing to show for null', () => {
+  const html = monthEndReviewHtml(null, []);
+  assert.equal(html.list, '');
+  assert.equal(html.banner, '');
+});
+
+test('resetBannerHtml: names the Reset pockets, skips Savings and Archived', () => {
+  const html = resetBannerHtml([
+    ...REVIEW_POCKETS,
+    { id: 'P05', name: 'Old', kind: 'Spend', rule: 'Reset', status: 'Archived' },
+  ]);
+  assert.match(html, /<strong>Petrol and Kids<\/strong> still reset at month end\./);
+  assert.match(html, /data-action="monthend-switch"[^>]*>Switch to carry over/);
+  assert.ok(!html.includes('Old'));
+});
+
+test('resetBannerHtml: empty when nothing resets, and blank rule counts as Reset', () => {
+  assert.equal(resetBannerHtml([{ id: 'P01', name: 'A', kind: 'Spend', rule: 'Carry' }]), '');
+  assert.equal(resetBannerHtml([]), '');
+  assert.match(resetBannerHtml([{ id: 'P01', name: 'A', kind: 'Spend', rule: '' }]), /<strong>A<\/strong>/);
+  assert.match(resetBannerHtml([{ name: 'A', rule: 'Reset' }, { name: 'B', rule: 'Reset' }, { name: 'C', rule: 'Reset' }]), /A, B and C/);
+  assert.match(resetBannerHtml([{ name: '<b>', rule: 'Reset' }]), /&lt;b&gt;/);
 });

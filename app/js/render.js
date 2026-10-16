@@ -415,6 +415,89 @@ export function renderMonthEnd(container, monthEnd) {
   mount(container, monthEndCardHtml(monthEnd));
 }
 
+/** "2026-10" -> "November": the month after the one in `key`; anything unreadable -> ''. */
+function nextMonthName(key) {
+  const m = /^\d{4}-(\d{2})$/.exec(String(key ?? ''));
+  return m ? FULL_MONTH_NAMES[Number(m[1]) % 12] || '' : '';
+}
+
+/** "A", "A and B", "A, B and C". */
+function joinNames(names) {
+  if (names.length <= 1) return names.join('');
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/**
+ * The banner offering to switch every Reset pocket to carry over. Empty string
+ * when no active, non-Savings pocket still resets.
+ */
+export function resetBannerHtml(pockets) {
+  const names = (Array.isArray(pockets) ? pockets : [])
+    .filter((p) => p && p.kind !== 'Savings' && p.status !== 'Archived' && p.archived !== true && (p.rule || 'Reset') === 'Reset')
+    .map((p) => esc(p.name));
+  if (names.length === 0) return '';
+  return (
+    `<div class="pb-merev__banner">` +
+    `<p class="pb-merev__bannertext"><strong>${joinNames(names)}</strong> still reset at month end.</p>` +
+    `<button type="button" class="pb-merev__btn pb-merev__btn--warn" data-action="monthend-switch">Switch to carry over</button>` +
+    `</div>`
+  );
+}
+
+function reviewRowHtml(item, intoMonth) {
+  const it = item || {};
+  let where;
+  let moveId = '';
+  if (it.type === 'sweep') {
+    where = `Swept to ${esc(it.toName)}`;
+    moveId = it.toPocketId;
+  } else if (it.type === 'forfeit') {
+    where = '<span class="pb-merev__lost">Lost at reset</span>';
+  } else {
+    where = `Carried into ${esc(intoMonth)}`;
+    moveId = it.pocketId;
+  }
+  const button = moveId
+    ? `<button type="button" class="pb-merev__btn" data-action="monthend-move" data-pocket-id="${esc(moveId)}">Move\u2026</button>`
+    : '<span></span>';
+  return (
+    `<div class="pb-merev__row">` +
+    `<span class="pb-merev__name">${esc(it.name)}</span>` +
+    `<span class="pb-merev__amt">${esc(formatRand(it.amount))}</span>` +
+    `<span class="pb-merev__where">${where}</span>${button}</div>`
+  );
+}
+
+/**
+ * The month-end review screen as three pieces of escaped HTML: the reset
+ * `banner`, one `list` row per item, and the `totals` strip.
+ */
+export function monthEndReviewHtml(monthEnd, pockets) {
+  const data = monthEnd && typeof monthEnd === 'object' ? monthEnd : {};
+  const items = Array.isArray(data.items) ? data.items : [];
+  const totals = data.totals || {};
+  const intoMonth = nextMonthName(data.fromMonth);
+  const cell = (label, value, mod) =>
+    `<div class="pb-merev__total"><p class="pb-merev__label">${label}</p>` +
+    `<p class="pb-merev__value${mod}">${esc(formatRand(value))}</p></div>`;
+  return {
+    banner: resetBannerHtml(pockets),
+    list: items.map((it) => reviewRowHtml(it, intoMonth)).join(''),
+    totals: cell('Carried', totals.carried, ' pb-merev__value--carry') +
+      cell('To Savings', totals.swept, '') +
+      cell('Reset', totals.forfeited, ' pb-merev__value--reset'),
+  };
+}
+
+/** Paint the month-end review screen into its three containers. */
+export function renderMonthEndReview(containers, monthEnd, pockets) {
+  const html = monthEndReviewHtml(monthEnd, pockets);
+  const c = containers || {};
+  mount(c.banner, html.banner);
+  mount(c.list, html.list);
+  mount(c.totals, html.totals);
+}
+
 /**
  * One Savings row: name, balance, a carry pill if any, and a line saying where
  * the money comes from. Savings has no limit, so it is never depleted or locked,

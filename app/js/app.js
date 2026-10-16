@@ -26,7 +26,7 @@
 import { config as defaultConfig, makeConfig } from './config.js';
 import { makeApi } from './api.js';
 import { formatMoney, monthProgress } from './format.js';
-import { renderPockets, renderSavings, renderSummary, renderMonthEnd, dayLabel, renderActivity } from './render.js';
+import { renderPockets, renderSavings, renderSummary, renderMonthEnd, renderMonthEndReview, dayLabel, renderActivity } from './render.js';
 import { mountAddForm, updateAddFormState } from './addform.js';
 import { mountManage, updateManageState } from './manage.js';
 import { mountMove, activePockets } from './move.js';
@@ -43,7 +43,7 @@ import { mountMove, activePockets } from './move.js';
 export const CLIENT_VERSION = '2.1.0';
 
 /** The three tabbed views, in tab-bar order. #view-setup is deliberately absent. */
-const VIEWS = ['home', 'add', 'manage', 'move'];
+const VIEWS = ['home', 'add', 'manage', 'move', 'monthend'];
 
 /** How long a toast stays up before it hides itself again. */
 const TOAST_MS = 3200;
@@ -394,6 +394,12 @@ export function boot(deps = {}) {
     viewMove: byId('view-move'),
     homeMove: byId('home-move'),
     moveClose: byId('move-close'),
+    viewMonthEnd: byId('view-monthend'),
+    monthEndBack: byId('monthend-back'),
+    monthEndBanner: byId('monthend-banner'),
+    monthEndList: byId('monthend-list'),
+    monthEndTotals: byId('monthend-totals'),
+    monthEndDone: byId('monthend-done'),
   };
 
   const views = {
@@ -402,6 +408,7 @@ export function boot(deps = {}) {
     add: els.viewAdd,
     manage: els.viewManage,
     move: els.viewMove,
+    monthend: els.viewMonthEnd,
   };
 
   /** tab buttons, keyed by view name — index.html marks them data-view. */
@@ -571,6 +578,11 @@ export function boot(deps = {}) {
 
     paintPockets(payload);
     paintMonthEnd(payload.monthEnd);
+    renderMonthEndReview(
+      { banner: els.monthEndBanner, list: els.monthEndList, totals: els.monthEndTotals },
+      payload.monthEnd,
+      pockets,
+    );
     renderActivity(els.activity, transactions, pocketNames(pockets));
   }
 
@@ -1024,21 +1036,73 @@ on(els.setupCancel, 'click', () => {
       }));
   });
 
-  // Month-end card: "Looks good" and the X remember the month and hide the card.
-  // ("monthend-review" has no handler yet.)
+  /** Remember that this month's month-end has been looked at. */
+  function markMonthEndSeen() {
+    const month = lastState && lastState.monthEnd && lastState.monthEnd.fromMonth;
+    if (!month) return;
+    try {
+      const store = (win && win.localStorage) || globalThis.localStorage;
+      if (store && typeof store.setItem === 'function') store.setItem('pb.monthEndSeen', month);
+    } catch (_) { /* storage blocked: the card just hides until the next load */ }
+  }
+
+  /** Mark the month seen, hide the Home card and go to Home. */
+  function finishMonthEnd() {
+    markMonthEndSeen();
+    renderMonthEnd(els.monthEnd, null);
+    switchView(views, tabs, 'home');
+  }
+
+  // Month-end card: "Looks good" and the X remember the month and hide the card;
+  // "Review & change" opens the review screen.
   on(els.monthEnd, 'click', (ev) => {
     const target = ev && ev.target && typeof ev.target.closest === 'function' ? ev.target : null;
+    if (target && target.closest('[data-action="monthend-review"]')) {
+      switchView(views, tabs, 'monthend');
+      return;
+    }
     const btn = target ? target.closest('[data-action="monthend-dismiss"]') : null;
     if (!btn) return;
-    const month = lastState && lastState.monthEnd && lastState.monthEnd.fromMonth;
-    if (month) {
-      try {
-        const store = (win && win.localStorage) || globalThis.localStorage;
-        if (store && typeof store.setItem === 'function') store.setItem('pb.monthEndSeen', month);
-      } catch (_) { /* storage blocked: the card just hides until the next load */ }
-    }
+    markMonthEndSeen();
     renderMonthEnd(els.monthEnd, null);
   });
+
+  // Month-end review: Move... opens the move screen, Switch turns every Reset
+  // pocket into Carry (one after another), Done/Back mark the month seen.
+  on(els.viewMonthEnd, 'click', (ev) => {
+    const target = ev && ev.target && typeof ev.target.closest === 'function' ? ev.target : null;
+    if (!target) return;
+
+    const move = target.closest('[data-action="monthend-move"]');
+    if (move) {
+      if (!moveScreen) return;
+      const dataset = move.dataset || {};
+      const id = dataset.pocketId || (move.getAttribute && move.getAttribute('data-pocket-id')) || '';
+      switchView(views, tabs, 'move');
+      moveScreen.open(String(id));
+      return;
+    }
+
+    const sw = target.closest('[data-action="monthend-switch"]');
+    if (sw) {
+      if (sw.disabled) return;
+      const resetting = activePockets(lastState)
+        .filter((p) => p.kind !== 'Savings' && (p.rule || 'Reset') === 'Reset');
+      sw.disabled = true;
+      track((async () => {
+        try {
+          for (const p of resetting) {
+            await api.updatePocket({ pocketId: p.id, rule: 'Carry' });
+          }
+        } catch (err) {
+          toast(describeError(err), 'error');
+        }
+        await refresh({ fresh: true });
+      })());
+    }
+  });
+  on(els.monthEndDone, 'click', finishMonthEnd);
+  on(els.monthEndBack, 'click', finishMonthEnd);
 
   // Tapping a pocket row: jump to the add form with that pocket chosen.
   // (The card button used to render with nothing listening to it.)

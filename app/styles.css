@@ -134,3 +134,20 @@ input[type="number"]::-webkit-inner-spin-button {
 .pb-monthend__actions { display: flex; gap: 8px; margin-top: 14px; }
 .pb-monthend__btn { flex: 1; min-height: 44px; border: 1px solid #334155; border-radius: 12px; background: none; color: #f1f5f9; font-weight: 600; cursor: pointer; }
 .pb-monthend__btn--ok { border-color: #10b981; color: #6ee7b7; }
+
+.pb-merev__banner { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 12px 14px; border: 1px solid rgba(245, 158, 11, .35); border-radius: 14px; background: rgba(245, 158, 11, .10); }
+.pb-merev__bannertext { flex: 1; margin: 0; font-size: 13px; }
+.pb-merev__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #1e293b; }
+.pb-merev__name { font-size: 15px; font-weight: 700; }
+.pb-merev__amt { font-size: 15px; font-weight: 800; text-align: right; }
+.pb-merev__where { font-size: 12px; color: #94a3b8; }
+.pb-merev__lost { color: #fcd34d; }
+.pb-merev__btn { min-height: 44px; padding: 0 12px; border: 1px solid #334155; border-radius: 999px; background: #0f172a; color: #6ee7b7; font-size: 12px; font-weight: 700; cursor: pointer; }
+.pb-merev__btn--warn { color: #fcd34d; border-color: rgba(245, 158, 11, .5); }
+.pb-merev__totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 16px; text-align: center; }
+.pb-merev__total { padding: 10px 6px; border-radius: 12px; background: #1e293b; }
+.pb-merev__label { margin: 0; font-size: 12px; color: #94a3b8; }
+.pb-merev__value { margin: 0; font-weight: 800; }
+.pb-merev__value--carry { color: #a7f3d0; }
+.pb-merev__value--reset { color: #fcd34d; }
+.pb-merev__done { width: 100%; min-height: 52px; margin-top: 14px; border: 0; border-radius: 14px; background: #10b981; color: #052e1f; font-size: 16px; font-weight: 800; cursor: pointer; }
