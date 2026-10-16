@@ -19,7 +19,7 @@ Type `HUMAN` = the agent stops there and a person deploys and checks the milesto
 | T09 | [HUMAN: deploy and check M1](tasks/T09-m1-human.md) | M1 | HUMAN | done |
 | T10 | [Adjustments sheet reads and writes](tasks/T10-adjustments-io.md) | M2 | backend | done |
 | T11 | [`transferFunds` API action](tasks/T11-transfer-api.md) | M2 | backend | done |
-| T12 | [`getState` returns this month's adjustments](tasks/T12-getstate-adjustments.md) | M2 | backend | todo |
+| T12 | [`getState` returns this month's adjustments](tasks/T12-getstate-adjustments.md) | M2 | backend | done |
 | T13 | [Move money: pure logic module](tasks/T13-move-logic.md) | M2 | frontend | todo |
 | T14 | [Move money screen](tasks/T14-move-screen.md) | M2 | frontend | todo |
 | T15 | [Leftover rules in `applyRollover` (pure)](tasks/T15-rollover-rules-pure.md) | M2 | backend | todo |

@@ -14,7 +14,7 @@ import {
 } from './01_Utils.gs.js';
 import { verifyToken, getUsers } from './02_Auth.gs.js';
 import {
-  readPockets, readTransactions, readRecentTransactions, findPocketRow, writeBalance,
+  readPockets, readTransactions, readRecentTransactions, readAdjustments, findPocketRow, writeBalance,
   appendTransaction, appendPocket, updatePocketRow, archivePocketRow,
   deleteTransactionRow, getTransactionRecord, findTransactionByRequestId, flushWrites,
   appendAdjustments, findAdjustmentByRequestId,
@@ -153,6 +153,7 @@ export function getState(params) {
     pockets: present,
     archivedPockets,
     transactions,
+    adjustments: readAdjustments({ month }),
     summary: {
       totalLimit: sum('limit'),
       totalBalance: sum('balance'),
