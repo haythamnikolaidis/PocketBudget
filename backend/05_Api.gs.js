@@ -97,6 +97,8 @@ function checkText(value, label, required) {
 function presentPocket(p, spentByPocket = {}) {
   const spent = r2(p.limit - p.balance);
   const monthSpent = spentByPocket[p.id] ?? spent;
+  const carriedIn = p.carriedIn || 0;
+  const available = r2(p.limit + carriedIn);
   return {
     id: p.id,
     name: p.name,
@@ -104,8 +106,13 @@ function presentPocket(p, spentByPocket = {}) {
     limit: r2(p.limit),
     balance: r2(p.balance),
     spent: r2(monthSpent),
-    pctUsed: p.limit > 0 ? r2((monthSpent / p.limit) * 100) : 0,
+    pctUsed: available > 0 ? r2((monthSpent / available) * 100) : 0,
     isLocked: p.balance <= 0,
+    rule: p.rule || 'Reset',
+    sweepTo: p.sweepTo || '',
+    carriedIn: r2(carriedIn),
+    kind: p.kind || 'Spend',
+    available,
   };
 }
 
@@ -172,7 +179,7 @@ export function getState(params) {
   }
 
   const present = pockets.map((p) => presentPocket(p, spentByPocket));
-  const sum = (k) => r2(present.reduce((s, p) => s + p[k], 0));
+  const sum = (k) => r2(present.filter((p) => p.kind !== 'Savings').reduce((s, p) => s + p[k], 0));
 
   return ok({
     serverTime: new Date().toISOString(),
@@ -185,6 +192,7 @@ export function getState(params) {
       totalLimit: sum('limit'),
       totalBalance: sum('balance'),
       totalSpent: sum('spent'),
+      totalCarriedIn: sum('carriedIn'),
       users: getUsers(),
     },
   });

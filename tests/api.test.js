@@ -231,3 +231,42 @@ test('getState returns only this month\'s adjustments, newest first', () => {
   assert.deepEqual(s.adjustments.map((a) => a.id), ['A1003', 'A1002']);
   restore();
 });
+
+const V2_POCKETS = [
+  ['P01', 'Groceries', 'Chase Checking', 800, 340.5, 'Active', 'Carry', '', 100, 'Spend'],
+  ['P02', 'Dining Out', 'Credit Card A', 250, 15, 'Active'],
+  ['P03', 'Savings', '', 0, 500, 'Active', 'Carry', '', 200, 'Savings'],
+];
+
+test('getState pockets carry the v2 fields with defaults for 6-column rows', () => {
+  const { restore } = withApi(V2_POCKETS, SAMPLE_TXNS);
+  const s = getState({ token: TOKEN, month: '2026-10' });
+  const [p1, p2] = s.pockets;
+  assert.equal(p1.rule, 'Carry');
+  assert.equal(p1.carriedIn, 100);
+  assert.equal(p1.kind, 'Spend');
+  assert.equal(p1.available, 900);
+  assert.equal(p2.rule, 'Reset');
+  assert.equal(p2.sweepTo, '');
+  assert.equal(p2.carriedIn, 0);
+  assert.equal(p2.kind, 'Spend');
+  assert.equal(p2.available, 250);
+  restore();
+});
+
+test('getState pctUsed is measured against available', () => {
+  const { restore } = withApi(V2_POCKETS, SAMPLE_TXNS);
+  const s = getState({ token: TOKEN, month: '2026-10' });
+  assert.equal(s.pockets[0].pctUsed, 7.24);   // 65.2 / 900
+  restore();
+});
+
+test('getState summary leaves out Savings pockets and totals carried in', () => {
+  const { restore } = withApi(V2_POCKETS, SAMPLE_TXNS);
+  const s = getState({ token: TOKEN, month: '2026-10' });
+  assert.equal(s.pockets.length, 3);
+  assert.equal(s.summary.totalLimit, 1050);
+  assert.equal(s.summary.totalBalance, 355.5);
+  assert.equal(s.summary.totalCarriedIn, 100);
+  restore();
+});
