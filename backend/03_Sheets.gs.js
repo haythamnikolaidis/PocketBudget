@@ -459,6 +459,11 @@ export function ensureV2Schema() {
     }
   }
 
+  if (!readPockets().some((p) => p.kind === 'Savings')) {
+    appendPocket({ name: 'Savings', account: '', limit: 0, rule: 'Carry', kind: 'Savings' });
+    changes.push('Pockets: created Savings');
+  }
+
   for (const [name, headers] of Object.entries(V2_NEW_SHEETS)) {
     if (ss().getSheetByName(name)) continue;
     const sheet = ss().insertSheet(name);
