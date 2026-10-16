@@ -17,6 +17,7 @@ import {
   renderSummary,
   activityRowHtml,
   renderPockets,
+  renderSavings,
   renderActivity,
 } from '../app/js/render.js';
 
@@ -694,4 +695,48 @@ test('renderPockets shows the legend only when some pocket has carried-in money'
     assert.match(container.templateInner, /This month's budget/);
     assert.match(container.templateInner, /Carried in/);
   });
+});
+
+/* -------------------------------------------------------------- savings -- */
+
+const SAVINGS = {
+  id: 'P09', name: 'Savings', account: 'Joint', kind: 'Savings',
+  limit: 0, balance: 0, spent: 0, pctUsed: 0, isLocked: true, carriedIn: 0,
+};
+
+test('renderPockets leaves Savings pockets out of the main list', async () => {
+  await withFakeDom(async (container) => {
+    renderPockets(container, [POCKET, SAVINGS]);
+    const html = container.templateInner;
+    assert.ok(html.includes('data-pocket-id="P01"'));
+    assert.ok(!html.includes('data-pocket-id="P09"'));
+  });
+});
+
+test('renderSavings renders a Savings pocket at R0 without the depleted or locked style', async () => {
+  await withFakeDom(async (container) => {
+    renderSavings(container, [POCKET, SAVINGS]);
+    const html = container.templateInner;
+    assert.ok(html.includes('data-pocket-id="P09"'));
+    assert.ok(!html.includes('data-pocket-id="P01"'));
+    assert.ok(html.includes('data-action="select-pocket"'));
+    assert.ok(html.includes('No monthly limit · fed by leftovers and transfers'));
+    assert.doesNotMatch(html, /Depleted|disabled|data-status="out"/);
+  });
+});
+
+test('renderSavings shows the balance and a carry pill', async () => {
+  await withFakeDom(async (container) => {
+    renderSavings(container, [{ ...SAVINGS, balance: 1200, carriedIn: 300 }], { month: '2026-11' });
+    const html = container.templateInner;
+    assert.ok(html.includes('R1,200'));
+    assert.ok(html.includes('+R300 from Oct'));
+  });
+});
+
+test('summaryHtml adds the carried-in note only when something was carried in', () => {
+  const base = { totalBalance: 500, totalLimit: 1000 };
+  assert.ok(summaryHtml({ ...base, totalCarriedIn: 3980 }, [], null).includes('of R1,000 · includes R3,980 carried in'));
+  assert.ok(!summaryHtml({ ...base, totalCarriedIn: 0 }, [], null).includes('carried in'));
+  assert.ok(!summaryHtml(base, [], null).includes('carried in'));
 });

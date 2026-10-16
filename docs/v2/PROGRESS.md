@@ -31,7 +31,7 @@ Type `HUMAN` = the agent stops there and a person deploys and checks the milesto
 | T21 | [Leftover rule on the pocket form](tasks/T21-manage-rule-form.md) | M2 | frontend | done |
 | T22 | [Show the rule in the pocket list and in edit mode](tasks/T22-manage-rule-list.md) | M2 | frontend | done |
 | T23 | [Home: carried-in bar segment and pills](tasks/T23-home-bars.md) | M2 | frontend | done |
-| T24 | [Home: Savings section and summary line](tasks/T24-home-savings.md) | M2 | frontend | todo |
+| T24 | [Home: Savings section and summary line](tasks/T24-home-savings.md) | M2 | frontend | done |
 | T25 | [`getState.monthEnd`](tasks/T25-monthend-api.md) | M2 | backend | todo |
 | T26 | [Month-end card on Home](tasks/T26-monthend-card.md) | M2 | frontend | todo |
 | T27 | [Month-end review screen](tasks/T27-monthend-review.md) | M2 | frontend | todo |

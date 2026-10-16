@@ -26,7 +26,7 @@
 import { config as defaultConfig, makeConfig } from './config.js';
 import { makeApi } from './api.js';
 import { formatMoney, monthProgress } from './format.js';
-import { renderPockets, renderSummary, dayLabel, renderActivity } from './render.js';
+import { renderPockets, renderSavings, renderSummary, dayLabel, renderActivity } from './render.js';
 import { mountAddForm, updateAddFormState } from './addform.js';
 import { mountManage, updateManageState } from './manage.js';
 import { mountMove, activePockets } from './move.js';
@@ -375,6 +375,8 @@ export function boot(deps = {}) {
     homeDay: byId('home-day'),
     homeSummary: byId('home-summary'),
     pockets: byId('pockets'),
+    savings: byId('savings'),
+    savingsHeading: byId('savings-heading'),
     activity: byId('activity'),
     setupForm: byId('setup-form'),
     setupEndpoint: byId('setup-endpoint'),
@@ -555,6 +557,7 @@ export function boot(deps = {}) {
     // cached payload from last month gets plain thresholds and no tick.
     const pace = monthProgress(new Date(), payload.month);
     pocketFilter = renderPockets(els.pockets, pockets, { pace, filter: pocketFilter, month: payload.month });
+    renderSavings(els.savings, pockets, { heading: els.savingsHeading, month: payload.month });
     renderSummary(els.homeSummary, payload.summary, pockets, pace);
     if (els.homeDay) els.homeDay.textContent = dayLabel(pace);
   }

@@ -151,6 +151,10 @@ function barHtml(pct, status, pace, label, heightClass, carriedPct = 0) {
 
 /* ----------------------------------------------------------- pocket row -- */
 
+function isSavings(p) {
+  return !!p && p.kind === 'Savings';
+}
+
 const RESET_PILL = `<span class="pb-pocket__reset shrink-0 rounded-full bg-slate-700 px-2 py-0.5 text-xs font-semibold text-slate-300">Reset</span>`;
 
 function carryPill(text) {
@@ -259,7 +263,7 @@ export function summaryHtml(summary, pockets, pace = null) {
   if (!Number.isFinite(balance) || !Number.isFinite(limit) || limit <= 0) return '';
 
   const pct = Math.max(0, Math.min(100, (balance / limit) * 100));
-  const attention = list.filter((p) => pocketStatus(p, pace) !== 'ok').length;
+  const attention = list.filter((p) => !isSavings(p) && pocketStatus(p, pace) !== 'ok').length;
 
   const needs = attention === 0
     ? 'All pockets on track'
@@ -269,13 +273,16 @@ export function summaryHtml(summary, pockets, pace = null) {
     ? `<strong class="font-semibold text-slate-100">${ahead ? 'Spending ahead of pace' : 'On pace'}.</strong> ${esc(needs)}`
     : `<strong class="font-semibold text-slate-100">${esc(needs)}</strong>`;
 
+  const carriedTotal = num(s.totalCarriedIn);
+  const carriedNote = carriedTotal > 0 ? ` · includes ${esc(formatRand(carriedTotal))} carried in` : '';
+
   return (
     `<div class="pb-sum flex items-center gap-4">` +
     ringHtml(pct, pace) +
     `<div class="min-w-0">` +
     `<p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Left this month</p>` +
     `<p class="pb-sum__left text-3xl font-extrabold tabular-nums text-slate-100">${esc(formatRand(balance))}</p>` +
-    `<p class="pb-sum__of text-xs tabular-nums text-slate-400">of ${esc(formatRand(limit))}</p>` +
+    `<p class="pb-sum__of text-xs tabular-nums text-slate-400">of ${esc(formatRand(limit))}${carriedNote}</p>` +
     `<p class="pb-sum__verdict mt-0.5 text-xs text-slate-400">${verdict}</p>` +
     `</div></div>`
   );
@@ -359,6 +366,46 @@ export function renderSummary(container, summary, pockets, pace = null) {
   mount(container, summaryHtml(summary, pockets, pace));
 }
 
+/**
+ * One Savings row: name, balance, a carry pill if any, and a line saying where
+ * the money comes from. Savings has no limit, so it is never depleted or locked,
+ * even at R0; the row is always a tappable "add an expense here" target.
+ */
+export function savingsRowHtml(p, opts = {}) {
+  const pocket = p || {};
+  const name = String(pocket.name ?? '');
+  const carryText = carryPillText(pocket, opts && opts.month);
+  return (
+    `<button type="button" class="pb-pocket pb-savings grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1` +
+    ` border-b border-slate-800 py-3 text-left"` +
+    ` data-action="select-pocket" data-pocket-id="${esc(pocket.id)}" data-status="ok"` +
+    ` aria-label="${esc(`Add expense to ${name}, ${formatMoney(pocket.balance)} saved`)}">` +
+    `<span class="flex min-w-0 items-center gap-2">` +
+    `<span class="pb-pocket__name truncate text-[15px] font-semibold text-slate-100">${esc(name)}</span>` +
+    `${carryPill(carryText)}</span>` +
+    `<span class="pb-pocket__amount whitespace-nowrap text-right font-bold tabular-nums text-slate-100">` +
+    `<span class="pb-pocket__left">${esc(formatRand(pocket.balance))}</span></span>` +
+    `<span class="pb-savings__note col-span-2 text-xs text-slate-400">No monthly limit · fed by leftovers and transfers</span>` +
+    `</button>`
+  );
+}
+
+/**
+ * The Savings section: one row per Savings pocket. With none, the container
+ * (and `opts.heading`, the section's title) is hidden and emptied.
+ */
+export function renderSavings(container, pockets, opts = {}) {
+  const list = (Array.isArray(pockets) ? pockets : []).filter(isSavings);
+  const heading = opts && opts.heading;
+  for (const el of [container, heading]) {
+    if (el && el.classList) el.classList.toggle('hidden', list.length === 0);
+  }
+  mount(container, list.length === 0
+    ? ''
+    : `<div class="pb-list flex flex-col">` +
+      list.map((p) => savingsRowHtml(p, { month: opts && opts.month })).join('') + `</div>`);
+}
+
 /** Only worth the screen space once the list is long enough to scan. */
 const CHIPS_FROM = 6;
 
@@ -398,7 +445,7 @@ function inFilter(p, filter, pace) {
  * Returns the filter that was actually applied.
  */
 export function renderPockets(container, pockets, opts = {}) {
-  const list = Array.isArray(pockets) ? pockets : [];
+  const list = (Array.isArray(pockets) ? pockets : []).filter((p) => !isSavings(p));
   const pace = (opts && opts.pace) || null;
   if (list.length === 0) {
     mount(container, `<p class="pb-empty px-4 py-8 text-center text-sm text-slate-500">` +
