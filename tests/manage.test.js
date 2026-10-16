@@ -14,7 +14,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { mountManage, updateManageState, ruleProblem, sweepTargets } from '../app/js/manage.js';
+import { mountManage, updateManageState, ruleProblem, sweepTargets, ruleLabel } from '../app/js/manage.js';
 import { ApiError } from '../app/js/api.js';
 
 /* ------------------------------------------------------------- fake DOM -- */
@@ -658,5 +658,24 @@ test('editing a pocket sends a changed rule and omits an unchanged one', async (
       pocketId: 'P01', name: 'Groceries', account: 'Chase Checking', limit: 800,
       rule: 'Sweep', sweepTo: 'P02',
     });
+  });
+});
+
+test('ruleLabel words each rule and names the sweep target', () => {
+  const all = [{ id: 'P02', name: 'Savings' }];
+  assert.equal(ruleLabel({ rule: 'Carry' }, all), 'Carries over');
+  assert.equal(ruleLabel({ rule: 'Reset' }, all), 'Resets');
+  assert.equal(ruleLabel({}, all), 'Resets');
+  assert.equal(ruleLabel({ rule: 'Sweep', sweepTo: 'P02' }, all), 'Goes to Savings');
+  assert.equal(ruleLabel({ rule: 'Sweep', sweepTo: 'P99' }, all), 'Goes to another pocket');
+});
+
+test('the pocket list shows the rule and edit mode preselects a sweep', async () => {
+  await withFakeDom(async () => {
+    const m = await mount([{ ...POCKET, rule: 'Sweep', sweepTo: 'P02' }, OTHER]);
+    assert.match(m.nodes['manage-list'].html, new RegExp('Goes to ' + OTHER.name));
+    await m.click('edit', 'P01');
+    assert.ok(m.nodes['manage-rule-sweep'].checked);
+    assert.equal(m.nodes['manage-sweep'].value, 'P02');
   });
 });

@@ -99,6 +99,19 @@ function limitCentsOf(raw) {
   return Math.abs(n * 100 - cents) > 1e-9 ? NaN : cents;
 }
 
+/** The leftover rule in words: 'Carries over', 'Resets' or 'Goes to <pocket>'. */
+export function ruleLabel(pocket, pockets) {
+  const rule = (pocket && pocket.rule) || 'Reset';
+  if (rule === 'Carry') return 'Carries over';
+  if (rule === 'Sweep') {
+    const list = Array.isArray(pockets) ? pockets : [];
+    const target = list.find((p) => p && String(p.id) === String(pocket.sweepTo));
+    const name = target ? String(target.name ?? '').trim() : '';
+    return name ? `Goes to ${name}` : 'Goes to another pocket';
+  }
+  return 'Resets';
+}
+
 /* ---------------------------------------------------------------- rows -- */
 
 /**
@@ -108,7 +121,7 @@ function limitCentsOf(raw) {
  * `data-action` / `data-pocket-id` are the delegation keys the click handler
  * reads, so the handler survives a re-render without rebinding per row.
  */
-function rowHtml(p) {
+function rowHtml(p, pockets) {
   const id = esc(p.id);
   const account = String(p.account ?? '').trim();
   const accountLine = account
@@ -121,6 +134,7 @@ function rowHtml(p) {
     `<div class="min-w-0">` +
     `<p class="pb-manage__name truncate text-sm font-semibold text-slate-900">${esc(p.name)}</p>` +
     accountLine +
+    `<p class="pb-manage__rule text-xs text-slate-500">${esc(ruleLabel(p, pockets))}</p>` +
     `<p class="pb-manage__amount mt-1 text-xs tabular-nums text-slate-600">` +
     `<span class="pb-manage__balance">${esc(formatMoney(p.balance))}</span> of` +
     `<span class="pb-manage__limit"> ${esc(formatMoney(p.limit))}</span></p>` +
@@ -244,7 +258,7 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
       return;
     }
     paint(list, '<ul class="pb-manage__list space-y-3">' +
-      pockets.map(rowHtml).join('') + '</ul>');
+      pockets.map((p) => rowHtml(p, pockets)).join('') + '</ul>');
   };
 
   const renderArchived = () => {
