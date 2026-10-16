@@ -14,7 +14,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { mountManage, updateManageState } from '../app/js/manage.js';
+import { mountManage, updateManageState, ruleProblem, sweepTargets } from '../app/js/manage.js';
 import { ApiError } from '../app/js/api.js';
 
 /* ------------------------------------------------------------- fake DOM -- */
@@ -67,13 +67,18 @@ function makeEl(id = '') {
  */
 function fakeShell() {
   const ids = ['manage-list', 'manage-form', 'manage-name', 'manage-account',
-               'manage-limit', 'manage-submit', 'manage-reason', 'manage-archived'];
+               'manage-limit', 'manage-submit', 'manage-reason', 'manage-archived',
+               'manage-rule-carry', 'manage-rule-sweep', 'manage-rule-reset', 'manage-sweep'];
   const nodes = {};
   for (const id of ids) nodes[id] = makeEl(id);
   nodes['manage-form'].type = 'form';
   nodes['manage-submit'].type = 'submit';
   nodes['manage-submit'].textContent = 'Create pocket';
   nodes['manage-reason'].classes.add('hidden');
+  nodes['manage-rule-carry'].checked = true;
+  nodes['manage-rule-carry'].value = 'Carry';
+  nodes['manage-rule-sweep'].value = 'Sweep';
+  nodes['manage-rule-reset'].value = 'Reset';
 
   const root = makeEl('root');
   root.querySelector = (sel) => nodes[String(sel).replace(/^#/, '')] || null;
@@ -254,7 +259,7 @@ test('an empty name blocks submission and never reaches the api', async () => {
 });
 
 test('an invalid monthly limit blocks submission and never reaches the api', async () => {
-  for (const bad of ['', 'abc', '0', '-5', '1.234']) {
+  for (const bad of ['', 'abc', '-5', '1.234']) {
     await withFakeDom(async () => {
       const m = await mount([]);
       m.type('name', 'Utilities');
@@ -279,6 +284,7 @@ test('creating a pocket trims the fields, sends a numeric limit, then calls onCh
       name: 'Groceries',
       account: 'Chase Checking',
       limit: 1200.5,
+      rule: 'Carry',
     });
     assert.equal(typeof m.api.calls.createPocket[0].limit, 'number', 'limit crosses as a number');
     assert.equal(m.changedCount(), 1);
@@ -577,5 +583,80 @@ test('a refresh repaints the Archived section', async () => {
     const m = await mount([POCKET]);
     updateManageState(m.teardown, { ...stateWith([POCKET]), archivedPockets: [{ id: 'P09', name: 'Gifts', account: '', limit: 10 }] });
     assert.match(m.nodes['manage-archived'].html, /Gifts/);
+  });
+});
+
+/* ------------------------------------------------------- leftover rule -- */
+
+test('ruleProblem refuses Reset with no limit and nothing else', () => {
+  const msg = 'A pocket that resets needs a monthly limit above R0.';
+  assert.equal(ruleProblem({ rule: 'Reset', limitCents: 0 }), msg);
+  assert.equal(ruleProblem({ rule: 'Reset', limitCents: 100 }), null);
+  assert.equal(ruleProblem({ rule: 'Carry', limitCents: 0 }), null);
+  assert.equal(ruleProblem({ rule: 'Sweep', limitCents: 0 }), null);
+});
+
+test('sweepTargets lists active pockets except self, Savings first', () => {
+  const state = stateWith([
+    { id: 'P01', name: 'Groceries' },
+    { id: 'P02', name: 'Savings', kind: 'Savings' },
+    { id: 'P03', name: 'Gas', kind: 'Spend' },
+    { id: 'P04', name: 'Old', status: 'Archived' },
+  ]);
+  assert.deepEqual(sweepTargets(state, 'P03').map((p) => p.id), ['P02', 'P01']);
+  assert.deepEqual(sweepTargets(state, '').map((p) => p.id), ['P02', 'P01', 'P03']);
+});
+
+test('creating a pocket sends rule Carry by default and allows a limit of 0', async () => {
+  await withFakeDom(async () => {
+    const m = await mount([]);
+    m.type('name', 'Savings');
+    m.type('limit', '0');
+    await m.submit();
+    assert.deepEqual(m.api.calls.createPocket, [{ name: 'Savings', account: '', limit: 0, rule: 'Carry' }]);
+  });
+});
+
+test('a Reset pocket with a limit of 0 is refused before the api', async () => {
+  await withFakeDom(async () => {
+    const m = await mount([]);
+    m.type('name', 'Fun');
+    m.type('limit', '0');
+    m.nodes['manage-rule-carry'].checked = false;
+    m.nodes['manage-rule-reset'].checked = true;
+    await m.submit();
+    assert.equal(m.api.calls.createPocket.length, 0);
+    assert.match(m.nodes['manage-reason'].textContent, /resets needs a monthly limit above R0/);
+  });
+});
+
+test('Sweep sends sweepTo with the chosen pocket', async () => {
+  await withFakeDom(async () => {
+    const m = await mount([POCKET]);
+    m.type('name', 'Holiday');
+    m.type('limit', '800');
+    m.nodes['manage-rule-carry'].checked = false;
+    m.nodes['manage-rule-sweep'].checked = true;
+    m.nodes['manage-sweep'].value = 'P01';
+    await m.submit();
+    assert.deepEqual(m.api.calls.createPocket, [
+      { name: 'Holiday', account: '', limit: 800, rule: 'Sweep', sweepTo: 'P01' },
+    ]);
+  });
+});
+
+test('editing a pocket sends a changed rule and omits an unchanged one', async () => {
+  await withFakeDom(async () => {
+    const m = await mount([{ ...POCKET, rule: 'Carry' }, OTHER]);
+    await m.click('edit', 'P01');
+    assert.ok(m.nodes['manage-rule-carry'].checked, 'the pocket rule is loaded');
+    m.nodes['manage-rule-carry'].checked = false;
+    m.nodes['manage-rule-sweep'].checked = true;
+    m.nodes['manage-sweep'].value = 'P02';
+    await m.submit();
+    assert.deepEqual(m.api.calls.updatePocket[0], {
+      pocketId: 'P01', name: 'Groceries', account: 'Chase Checking', limit: 800,
+      rule: 'Sweep', sweepTo: 'P02',
+    });
   });
 });

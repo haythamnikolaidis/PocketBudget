@@ -238,6 +238,25 @@
                autocomplete="off"
                class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm
                       focus:border-accent focus:outline-none">
+        <p class="text-xs text-slate-500">R0 is fine for a pocket that only collects leftovers, like Savings.</p>
+        <fieldset id="manage-rule" class="flex flex-col gap-2">
+          <legend class="mb-1 text-xs font-bold text-slate-400">At month end, what's left…</legend>
+          <label class="flex items-center gap-3 rounded-lg border border-slate-700 px-3 py-2.5 text-sm">
+            <input type="radio" name="rule" id="manage-rule-carry" value="Carry" checked>
+            <span>Carries over <span class="pb-tag">Default</span></span>
+          </label>
+          <label class="flex items-center gap-3 rounded-lg border border-slate-700 px-3 py-2.5 text-sm">
+            <input type="radio" name="rule" id="manage-rule-sweep" value="Sweep">
+            <span>Goes to another pocket</span>
+          </label>
+          <select id="manage-sweep" name="sweepTo" aria-label="Pocket that leftovers go to"
+                  class="hidden w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm
+                         focus:border-accent focus:outline-none"></select>
+          <label class="flex items-center gap-3 rounded-lg border border-slate-700 px-3 py-2.5 text-sm">
+            <input type="radio" name="rule" id="manage-rule-reset" value="Reset">
+            <span>Resets</span>
+          </label>
+        </fieldset>
         <p id="manage-reason" class="hidden rounded-lg bg-rose-500/15 px-3 py-2 text-sm text-rose-200"></p>
         <button type="submit" id="manage-submit"
                 class="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-ink disabled:opacity-50">

@@ -28,7 +28,7 @@ Type `HUMAN` = the agent stops there and a person deploys and checks the milesto
 | T18 | [`migrateV2` creates the Savings pocket](tasks/T18-savings-pocket.md) | M2 | backend | done |
 | T19 | [Stop capping balances at the monthly limit](tasks/T19-remove-clamps.md) | M2 | backend+frontend | done |
 | T20 | [v2 fields in the API pocket object and summary](tasks/T20-present-pocket-v2.md) | M2 | backend | done |
-| T21 | [Leftover rule on the pocket form](tasks/T21-manage-rule-form.md) | M2 | frontend | todo |
+| T21 | [Leftover rule on the pocket form](tasks/T21-manage-rule-form.md) | M2 | frontend | done |
 | T22 | [Show the rule in the pocket list and in edit mode](tasks/T22-manage-rule-list.md) | M2 | frontend | todo |
 | T23 | [Home: carried-in bar segment and pills](tasks/T23-home-bars.md) | M2 | frontend | todo |
 | T24 | [Home: Savings section and summary line](tasks/T24-home-savings.md) | M2 | frontend | todo |
