@@ -19,7 +19,7 @@ import {
   deleteTransactionRow, getTransactionRecord, findTransactionByRequestId, flushWrites,
   appendAdjustments, findAdjustmentByRequestId,
 } from './03_Sheets.gs.js';
-import { monthKey, applyRollover, shouldRollover } from './04_Rollover.gs.js';
+import { monthKey, localParts, applyRollover, shouldRollover } from './04_Rollover.gs.js';
 
 /* --------------------------------------------------------------- helpers -- */
 
@@ -145,6 +145,44 @@ export function ping(params) {
 }
 
 /**
+ * The "what happened to last month's leftovers" banner for the first week of a month.
+ * Null after day 7 or when the rollover left nothing to report. Sums are done in cents.
+ */
+export function buildMonthEnd(adjustments, pockets, now = new Date()) {
+  const { year, month, day } = localParts(now);
+  if (day > 7) return null;
+  const nameOf = (id) => {
+    const p = (pockets || []).find((x) => x.id === id);
+    return p ? p.name : '';
+  };
+  const items = (adjustments || [])
+    .filter((a) => a.type === 'carry' || a.type === 'sweep' || a.type === 'forfeit')
+    .map((a) => {
+      const pocketId = a.type === 'carry' ? a.toPocketId : a.fromPocketId;
+      const toPocketId = a.type === 'sweep' ? a.toPocketId : '';
+      return {
+        pocketId, name: nameOf(pocketId), type: a.type, amount: r2(a.amount),
+        toPocketId, toName: toPocketId ? nameOf(toPocketId) : '',
+      };
+    })
+    .sort((a, b) => b.amount - a.amount);
+  if (items.length === 0) return null;
+  const cents = { carry: 0, sweep: 0, forfeit: 0 };
+  for (const it of items) cents[it.type] += Math.round(it.amount * 100);
+  const prev = month === 1 ? { y: year - 1, m: 12 } : { y: year, m: month - 1 };
+  return {
+    fromMonth: prev.y + '-' + String(prev.m).padStart(2, '0'),
+    items,
+    totals: {
+      carried: cents.carry / 100,
+      swept: cents.sweep / 100,
+      forfeited: cents.forfeit / 100,
+      all: (cents.carry + cents.sweep + cents.forfeit) / 100,
+    },
+  };
+}
+
+/**
  * The whole home screen in one round trip.
  * `spent` is month-scoped so it survives rollover; `balance` is the live figure.
  */
@@ -188,6 +226,7 @@ export function getState(params) {
     archivedPockets,
     transactions,
     adjustments: readAdjustments({ month }),
+    monthEnd: buildMonthEnd(readAdjustments({ month: monthKey(new Date()) }), everyPocket, new Date()),
     summary: {
       totalLimit: sum('limit'),
       totalBalance: sum('balance'),
