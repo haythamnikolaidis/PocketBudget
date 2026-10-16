@@ -60,6 +60,62 @@ const DEFINITIVE_REJECTIONS = new Set([
 const UNCERTAIN_REASON = 'Could not confirm the expense was saved. '
   + 'Tap Save again — it will not be recorded twice.';
 
+const ALL_LOCKED_REASON = 'Every pocket is depleted — there is no money left to spend. '
+  + 'Raise a limit to log another expense.';
+const UNEXPECTED_FAILURE = 'Something went wrong saving the expense. Check Activity before trying again.';
+
+/* ------------------------------------------------------------ pure logic -- */
+
+/**
+ * A pocket is locked when the server said so OR its balance is spent down.
+ * Both are checked so a stale flag cannot present a depleted pocket as spendable.
+ */
+export function isPocketLocked(p) {
+  if (!p) return false;
+  if (p.isLocked === true) return true;
+  const bal = Number(p.balance);
+  return Number.isFinite(bal) && bal <= 0;
+}
+
+/**
+ * Which pocket the form should have selected. The previous selection survives
+ * only while that pocket still exists AND can be spent from; otherwise the first
+ * spendable pocket is chosen, or '' when none is. A depleted pocket is never the
+ * answer, so it can never sit disabled-but-selected in the picker.
+ *
+ * @param {object[]} pockets    getState pockets
+ * @param {string}   selectedId the id currently selected ('' if none)
+ * @returns {string} the id to select, or ''
+ */
+export function resolveSelectedPocketId(pockets, selectedId) {
+  const list = Array.isArray(pockets) ? pockets.filter((p) => p && p.id !== undefined && p.id !== null) : [];
+  const want = String(selectedId ?? '');
+  const kept = want ? list.find((p) => String(p.id) === want) : null;
+  if (kept && !isPocketLocked(kept)) return String(kept.id);
+  const open = list.find((p) => !isPocketLocked(p));
+  return open ? String(open.id) : '';
+}
+
+/**
+ * The message for a failed save, and whether the server definitively refused it.
+ * INSUFFICIENT_FUNDS keeps the server's text verbatim; unknown outcomes tell the
+ * user a retry is safe; anything that is not an Error from the api client still
+ * produces a readable message.
+ *
+ * @returns {{ message: string, definitive: boolean, stale: boolean }}
+ */
+export function describeSubmitFailure(err) {
+  const code = err && typeof err === 'object' ? err.code : undefined;
+  if (code === 'INSUFFICIENT_FUNDS') {
+    return { message: String(err.message), definitive: true, stale: true };
+  }
+  if (code && DEFINITIVE_REJECTIONS.has(code)) {
+    return { message: (err && err.message) || 'Could not save the expense.', definitive: true, stale: false };
+  }
+  if (code) return { message: UNCERTAIN_REASON, definitive: false, stale: false };
+  return { message: UNEXPECTED_FAILURE, definitive: false, stale: false };
+}
+
 /** Storage key remembering which household member this phone belongs to. */
 const USER_KEY = 'pb.user';
 
@@ -214,17 +270,7 @@ export function mountAddForm({ root, api, state, users, onAdded, onError, onStal
   const pockets = () => (Array.isArray(current.pockets) ? current.pockets : []);
   const pocketById = (id) => pockets().find((p) => p && p.id === id) || null;
 
-  /**
-   * A pocket is locked when the server said so OR its balance is spent down.
-   * Both are checked so a stale flag cannot present a depleted pocket as
-   * spendable — the UI must not promise something the server will refuse.
-   */
-  function isLocked(p) {
-    if (!p) return false;
-    if (p.isLocked === true) return true;
-    const bal = Number(p.balance);
-    return Number.isFinite(bal) && bal <= 0;
-  }
+  const isLocked = isPocketLocked;
 
   function listUsers() {
     if (Array.isArray(users) && users.length) return users;
@@ -239,11 +285,6 @@ export function mountAddForm({ root, api, state, users, onAdded, onError, onStal
     const base = String(p.name ?? '').trim() || String(p.id ?? '');
     const left = formatMoney(p.balance);
     return base + ' — ' + left + ' left' + (isLocked(p) ? ' (depleted)' : '');
-  }
-
-  /** First pocket that can actually be spent from. */
-  function firstOpenPocket() {
-    return pockets().find((p) => !isLocked(p)) || null;
   }
 
   /**
@@ -264,13 +305,9 @@ export function mountAddForm({ root, api, state, users, onAdded, onError, onStal
       pocketEl.appendChild(makeOption(ownerDoc, 'option', String(p.id), pocketLabel(p), isLocked(p)));
     }
 
-    // Keep the user's choice across a refresh when that pocket still exists;
-    // otherwise fall back to the first spendable one. A locked pocket must
-    // never be the silent default.
-    const kept = prevPocket && pocketById(prevPocket) ? prevPocket : '';
-    const fallback = firstOpenPocket();
-    const target = kept || (fallback ? String(fallback.id) : '');
-    if (target) pocketEl.value = target;
+    // Keep the user's choice across a refresh only while that pocket can still be
+    // spent from; a depleted pocket must never stay selected.
+    pocketEl.value = resolveSelectedPocketId(pockets(), prevPocket);
 
     if (userEl) {
       while (userEl.firstChild) userEl.removeChild(userEl.firstChild);
@@ -299,7 +336,7 @@ export function mountAddForm({ root, api, state, users, onAdded, onError, onStal
     }
     if (!selected) {
       if (submitEl) submitEl.disabled = true;
-      showReason(reasonEl, NO_POCKET_REASON);
+      showReason(reasonEl, pockets().every(isLocked) ? ALL_LOCKED_REASON : NO_POCKET_REASON);
       return { ok: false };
     }
     if (isLocked(selected)) {
@@ -321,7 +358,26 @@ export function mountAddForm({ root, api, state, users, onAdded, onError, onStal
     return { ok: true };
   }
 
+  /**
+   * Move the selection off a depleted or missing pocket, then recompute the
+   * submit gate. Used whenever the form is shown or its state refreshes.
+   */
+  function syncSelection() {
+    if (hasDom && pocketEl) {
+      const want = resolveSelectedPocketId(pockets(), pocketEl.value);
+      if (want !== pocketEl.value) pocketEl.value = want;
+    }
+    return syncSubmitState();
+  }
+
   /* ------------------------------------------------------------- submit -- */
+
+  /** Show a transient message; a throwing toast must never break the submit path. */
+  function notify(message, kind) {
+    try {
+      if (typeof toast === 'function') toast(message, kind);
+    } catch (_) { /* nothing more can be done for the user here */ }
+  }
 
   async function submit() {
     if (disposed) return;
@@ -330,37 +386,45 @@ export function mountAddForm({ root, api, state, users, onAdded, onError, onStal
     // event must not open a second request.
     if (inFlight) return;
 
-    // Gate on the server's own amount rules before spending a round trip.
-    if (!isValidAmount(amountEl ? amountEl.value : '')) {
-      if (submitEl) submitEl.disabled = true;
-      showReason(reasonEl, AMOUNT_REASON);
-      if (amountEl && typeof amountEl.focus === 'function') amountEl.focus();
-      return;
-    }
-
-    const verdict = syncSubmitState();
-    if (!verdict.ok) return;
-
-    const amount = parseAmount(amountEl.value);
-    const payload = {
-      pocketId: String(pocketEl.value),
-      amount,
-      note: noteEl ? String(noteEl.value ?? '').trim() : '',
-      user: userEl ? String(userEl.value ?? '') : '',
-    };
-
-    // Retrying the SAME expense reuses its requestId (so a lost response cannot
-    // become a second deduction); changing any field is a different expense.
-    const fingerprint = JSON.stringify([payload.pocketId, payload.amount, payload.note, payload.user]);
-    if (!pendingAttempt || pendingAttempt.fingerprint !== fingerprint) {
-      pendingAttempt = { id: newRequestId(), fingerprint };
-    }
-    payload.requestId = pendingAttempt.id;
-
     inFlight = true;
-    syncSubmitState(); // disables submit for the duration of the request
-
+    // True when the form already shows why it refused; finally must not repaint over it.
+    let refused = false;
     try {
+      // Gate on the server's own amount rules before spending a round trip.
+      if (!isValidAmount(amountEl ? amountEl.value : '')) {
+        if (submitEl) submitEl.disabled = true;
+        showReason(reasonEl, AMOUNT_REASON);
+        if (amountEl && typeof amountEl.focus === 'function') amountEl.focus();
+        refused = true;
+        return;
+      }
+
+      // A depleted or missing selection is refused with a message and a toast,
+      // never silently: the tap must visibly do something.
+      const verdict = syncSubmitState();
+      if (!verdict.ok) {
+        notify(reasonEl && reasonEl.textContent ? reasonEl.textContent : NO_POCKET_REASON, 'error');
+        refused = true;
+        return;
+      }
+
+      const amount = parseAmount(amountEl.value);
+      const payload = {
+        pocketId: String(pocketEl.value),
+        amount,
+        note: noteEl ? String(noteEl.value ?? '').trim() : '',
+        user: userEl ? String(userEl.value ?? '') : '',
+      };
+
+      // Retrying the SAME expense reuses its requestId (so a lost response cannot
+      // become a second deduction); changing any field is a different expense.
+      const fingerprint = JSON.stringify([payload.pocketId, payload.amount, payload.note, payload.user]);
+      if (!pendingAttempt || pendingAttempt.fingerprint !== fingerprint) {
+        pendingAttempt = { id: newRequestId(), fingerprint };
+      }
+      payload.requestId = pendingAttempt.id;
+
+      if (submitEl) submitEl.disabled = true; // for the duration of the request
       const result = await api.createTransaction(payload);
       pendingAttempt = null;
 
@@ -371,29 +435,29 @@ export function mountAddForm({ root, api, state, users, onAdded, onError, onStal
       if (noteEl) noteEl.value = '';
       if (amountEl && typeof amountEl.focus === 'function') amountEl.focus();
 
-      if (typeof toast === 'function') toast('Expense saved.', 'success');
+      notify('Expense saved.', 'success');
       if (typeof onAdded === 'function') onAdded(result);
     } catch (err) {
-      if (err && err.code === 'INSUFFICIENT_FUNDS') {
-        // VERBATIM. The brief specifies this exact string; rewording it is a
-        // regression, so err.message goes to the toast untouched.
-        if (typeof toast === 'function') toast(err.message, 'error');
-        // The refusal means what the screen showed was out of date (the other
-        // phone spent first). Reload so the pocket list shows the real balance.
-        if (typeof onStale === 'function') onStale(err);
+      const failure = describeSubmitFailure(err);
+      if (failure.definitive) pendingAttempt = null;
+      if (failure.stale) {
+        // VERBATIM. The brief specifies this exact string, so err.message goes to
+        // the toast untouched. The refusal also means what the screen showed was
+        // out of date (the other phone spent first): reload so the pocket list
+        // shows the real balance.
+        notify(failure.message, 'error');
+        try { if (typeof onStale === 'function') onStale(err); } catch (_) { /* refresh is best effort */ }
       } else {
-        const known = Boolean(err && DEFINITIVE_REJECTIONS.has(err.code));
-        const message = known
-          ? (err.message || 'Could not save the expense.')
-          : UNCERTAIN_REASON;
-        if (typeof onError === 'function') onError(err);
-        if (typeof toast === 'function') toast(message, 'error');
+        try { if (typeof onError === 'function') onError(err); } catch (_) { /* the toast below still shows */ }
+        notify(failure.message, 'error');
       }
-      if (err && DEFINITIVE_REJECTIONS.has(err.code)) pendingAttempt = null;
       // The amount stays put so the user can fix it and retry without retyping.
     } finally {
+      // Whatever happened above, the form must be usable again.
       inFlight = false;
-      syncSubmitState();
+      if (!refused) {
+        try { syncSubmitState(); } catch (_) { if (submitEl) submitEl.disabled = false; }
+      }
     }
   }
 
@@ -472,8 +536,14 @@ export function mountAddForm({ root, api, state, users, onAdded, onError, onStal
   teardown._applyState = (next) => {
     current = next || {};
     renderOptions();
-    syncSubmitState();
+    syncSelection();
   };
+
+  /**
+   * Called whenever the Add screen is shown: re-checks the remembered pocket
+   * against the current balances and moves off one that can no longer be spent.
+   */
+  teardown.ensureSelection = () => syncSelection();
 
   return teardown;
 }
