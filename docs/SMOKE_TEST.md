@@ -154,7 +154,51 @@ Two phones submitting at the same moment must never produce a wrong balance.
 
 ---
 
-## 12. Installability
+## 12. Moving money between pockets
+
+1. Note the balance and monthly limit of two pockets, A and B
+2. Open pocket A and tap **Move money**, then move R10.00 from A to B
+3. Confirm A's balance dropped by exactly R10.00 and B's rose by exactly R10.00
+4. Confirm **both limits are unchanged**
+5. Confirm the move appears in both pockets' history and in the activity feed
+
+---
+
+## 13. Forced rollover, one pocket per rule
+
+1. Set one pocket to **Carry**, one to **Sweep** (pointing at another pocket), and one to
+   **Reset**. Leave some money in each, and note every balance and the Savings balance
+2. In Apps Script → Script Properties, set `LAST_ROLLOVER_KEY` to last month, then open the app
+3. Confirm the Carry pocket is its limit plus the leftover it kept
+4. Confirm the Reset pocket is back to its limit, with the leftover gone
+5. Confirm the Sweep pocket is back to its limit, and the leftover is now in its target pocket
+6. Confirm the Savings balance rose by the amount swept into it
+7. Check the `Adjustments` sheet: one row per pocket that had leftover money, with type `carry`,
+   `sweep` or `forfeit` to match its rule
+8. Open the app again and confirm nothing changes
+
+---
+
+## 14. Month-end card shows once per phone
+
+1. On phone A, open the app in the first days of a new month
+2. Confirm the month-end card appears on Home
+3. Open it, review it, and tap **Done**
+4. Reload the app on phone A and confirm the card **does not** come back
+5. Open the app on phone B and confirm the card shows there once, then stays hidden after **Done**
+
+---
+
+## 15. Pocket detail adds up
+
+1. Open a pocket's detail screen
+2. Confirm the lines add up: **Monthly limit** + **Carried in** + **Moved in** − **Moved out**
+   − **Spent** = **Left**
+3. Confirm **Left** matches the balance on the pocket card on Home
+
+---
+
+## 16. Installability
 
 | Platform | Check |
 |---|---|
@@ -169,7 +213,7 @@ Two phones submitting at the same moment must never produce a wrong balance.
 
 ---
 
-## 13. The 5-second entry
+## 17. The 5-second entry
 
 1. Close the app completely
 2. Reopen it on a phone

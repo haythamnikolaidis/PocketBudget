@@ -29,7 +29,7 @@ export const ACTIONS = [
 ];
 
 /** Version of the deployed backend; returned by ping/getState so the client can warn on mismatch. */
-export const SERVER_VERSION = '2.1.0';
+export const SERVER_VERSION = '2.2.0';
 
 /**
  * The household's offset from UTC, in minutes: South Africa is UTC+2 all year (no

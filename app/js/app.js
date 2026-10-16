@@ -41,7 +41,7 @@ import { mountPocket } from './pocket.js';
  * render numbers it does not know how to interpret. Bumping one and not the
  * other is the bug that banner exists to catch, so bump both in one commit.
  */
-export const CLIENT_VERSION = '2.1.0';
+export const CLIENT_VERSION = '2.2.0';
 
 /** The three tabbed views, in tab-bar order. #view-setup is deliberately absent. */
 const VIEWS = ['home', 'add', 'manage', 'move', 'monthend', 'pocket'];

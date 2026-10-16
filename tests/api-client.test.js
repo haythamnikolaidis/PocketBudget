@@ -58,7 +58,7 @@ test('getState is a POST: the token travels in the body, never in the URL', asyn
 
 test('ping is a POST too, so Test connection never puts the token in a URL', async () => {
   const seen = [];
-  const api = apiWith(async (url, opts) => { seen.push({ url, opts }); return okJson({ ok: true, version: '2.1.0' }); });
+  const api = apiWith(async (url, opts) => { seen.push({ url, opts }); return okJson({ ok: true, version: '2.2.0' }); });
   await api.ping();
   assert.equal(seen[0].opts.method, 'POST');
   assert.equal(JSON.parse(seen[0].opts.body).action, 'ping');
@@ -197,9 +197,9 @@ test('an empty response body becomes EMPTY_RESPONSE', async () => {
 });
 
 test('ping reaches the server and returns the version', async () => {
-  const api = apiWith(async () => okJson({ ok: true, version: '2.1.0', serverTime: 'x' }));
+  const api = apiWith(async () => okJson({ ok: true, version: '2.2.0', serverTime: 'x' }));
   const res = await api.ping();
-  assert.equal(res.version, '2.1.0');
+  assert.equal(res.version, '2.2.0');
 });
 
 test('ApiError carries its code and context', () => {

@@ -75,7 +75,7 @@ test('nextTransactionId ignores malformed ids rather than crashing', () => {
 test('ok() wraps a payload and stamps the version', () => {
   const r = ok({ pockets: [] });
   assert.equal(r.ok, true);
-  assert.equal(r.version, '2.1.0');
+  assert.equal(r.version, '2.2.0');
   assert.deepEqual(r.pockets, []);
 });
 

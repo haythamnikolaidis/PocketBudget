@@ -145,6 +145,9 @@ users until you redeploy:
 2. **Deploy → Manage deployments → ✏️ (pencil) → Version: New version → Deploy**.
 3. If the release notes say so, run `migrateV2()` once from the editor (safe to repeat).
 
+**M2 (2.2.0) requires step 3.** Run `migrateV2()` once after deploying it. It creates the Savings
+pocket, along with the v2 columns and sheets the rollover needs to record leftovers.
+
 Skipping this is the single most common reason a fix appears not to work.
 
 If you change frontend files, push to `master` — but also **bump
