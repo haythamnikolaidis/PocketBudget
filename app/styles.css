@@ -121,3 +121,16 @@ input[type="number"]::-webkit-inner-spin-button {
 .pb-carry-pill { background: #a7f3d0; color: #064e3b; }
 .pb-legend { display: flex; align-items: center; gap: 16px; }
 .pb-legend__item { display: inline-flex; align-items: center; gap: 6px; }
+
+.pb-monthend { margin-top: 16px; padding: 16px; border: 1px solid #334155; border-radius: 16px; }
+.pb-monthend__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.pb-monthend__title { margin: 0; font-size: 16px; font-weight: 800; }
+.pb-monthend__sub { margin: 2px 0 0; font-size: 13px; color: #94a3b8; }
+.pb-monthend__x { min-width: 44px; min-height: 44px; margin: -12px -12px 0 0; background: none; border: 0; color: #94a3b8; font-size: 18px; cursor: pointer; }
+.pb-monthend__lines { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; margin-top: 12px; font-size: 13px; }
+.pb-monthend__val { text-align: right; }
+.pb-monthend__dest { color: #94a3b8; }
+.pb-monthend__dest--reset { color: #fcd34d; }
+.pb-monthend__actions { display: flex; gap: 8px; margin-top: 14px; }
+.pb-monthend__btn { flex: 1; min-height: 44px; border: 1px solid #334155; border-radius: 12px; background: none; color: #f1f5f9; font-weight: 600; cursor: pointer; }
+.pb-monthend__btn--ok { border-color: #10b981; color: #6ee7b7; }

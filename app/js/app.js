@@ -26,7 +26,7 @@
 import { config as defaultConfig, makeConfig } from './config.js';
 import { makeApi } from './api.js';
 import { formatMoney, monthProgress } from './format.js';
-import { renderPockets, renderSavings, renderSummary, dayLabel, renderActivity } from './render.js';
+import { renderPockets, renderSavings, renderSummary, renderMonthEnd, dayLabel, renderActivity } from './render.js';
 import { mountAddForm, updateAddFormState } from './addform.js';
 import { mountManage, updateManageState } from './manage.js';
 import { mountMove, activePockets } from './move.js';
@@ -373,6 +373,7 @@ export function boot(deps = {}) {
     versionBanner: byId('version-banner'),
     staleBanner: byId('stale-banner'),
     homeDay: byId('home-day'),
+    monthEnd: byId('month-end'),
     homeSummary: byId('home-summary'),
     pockets: byId('pockets'),
     savings: byId('savings'),
@@ -569,7 +570,19 @@ export function boot(deps = {}) {
     const transactions = Array.isArray(payload.transactions) ? payload.transactions : [];
 
     paintPockets(payload);
+    paintMonthEnd(payload.monthEnd);
     renderActivity(els.activity, transactions, pocketNames(pockets));
+  }
+
+  /** Show the month-end card unless this month's has already been dismissed. */
+  function paintMonthEnd(monthEnd) {
+    let seen = '';
+    try {
+      const store = (win && win.localStorage) || globalThis.localStorage;
+      seen = store && typeof store.getItem === 'function' ? store.getItem('pb.monthEndSeen') : '';
+    } catch (_) { /* storage blocked: show the card */ }
+    const show = monthEnd && monthEnd.fromMonth && seen !== monthEnd.fromMonth;
+    renderMonthEnd(els.monthEnd, show ? monthEnd : null);
   }
 
   function pocketNames(pockets) {
@@ -1009,6 +1022,22 @@ on(els.setupCancel, 'click', () => {
         // truth. Reporting the failure is the honest move.
         toast(describeError(err), 'error');
       }));
+  });
+
+  // Month-end card: "Looks good" and the X remember the month and hide the card.
+  // ("monthend-review" has no handler yet.)
+  on(els.monthEnd, 'click', (ev) => {
+    const target = ev && ev.target && typeof ev.target.closest === 'function' ? ev.target : null;
+    const btn = target ? target.closest('[data-action="monthend-dismiss"]') : null;
+    if (!btn) return;
+    const month = lastState && lastState.monthEnd && lastState.monthEnd.fromMonth;
+    if (month) {
+      try {
+        const store = (win && win.localStorage) || globalThis.localStorage;
+        if (store && typeof store.setItem === 'function') store.setItem('pb.monthEndSeen', month);
+      } catch (_) { /* storage blocked: the card just hides until the next load */ }
+    }
+    renderMonthEnd(els.monthEnd, null);
   });
 
   // Tapping a pocket row: jump to the add form with that pocket chosen.

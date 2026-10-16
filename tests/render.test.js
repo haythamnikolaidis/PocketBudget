@@ -19,6 +19,7 @@ import {
   renderPockets,
   renderSavings,
   renderActivity,
+  monthEndCardHtml,
 } from '../app/js/render.js';
 
 /* ------------------------------------------------------------- fixtures -- */
@@ -739,4 +740,54 @@ test('summaryHtml adds the carried-in note only when something was carried in', 
   assert.ok(summaryHtml({ ...base, totalCarriedIn: 3980 }, [], null).includes('of R1,000 · includes R3,980 carried in'));
   assert.ok(!summaryHtml({ ...base, totalCarriedIn: 0 }, [], null).includes('carried in'));
   assert.ok(!summaryHtml(base, [], null).includes('carried in'));
+});
+
+/* ------------------------------------------------------- month-end card -- */
+
+const MONTH_END = {
+  fromMonth: '2026-10',
+  items: [
+    { pocketId: 'P01', name: 'Car Service', type: 'carry', amount: 3000 },
+    { pocketId: 'P02', name: 'Dining Out', type: 'sweep', amount: 45, toPocketId: 'P09', toName: 'Savings' },
+    { pocketId: 'P03', name: 'Petrol', type: 'forfeit', amount: 30 },
+  ],
+  totals: { carried: 3000, swept: 45, forfeited: 30, all: 3075 },
+};
+
+test('monthEndCardHtml: nothing for null', () => {
+  assert.equal(monthEndCardHtml(null), '');
+});
+
+test('monthEndCardHtml: title, summary and buttons', () => {
+  const html = monthEndCardHtml(MONTH_END);
+  assert.match(html, /October wrapped up/);
+  assert.match(html, /R3,075 left over in 3 pockets\. Here&#39;s where it went\./);
+  assert.match(html, /data-action="monthend-review"[^>]*>Review &amp; change/);
+  assert.match(html, /data-action="monthend-dismiss"[^>]*>Looks good/);
+  assert.match(html, /data-action="monthend-dismiss" aria-label="Dismiss"/);
+});
+
+test('monthEndCardHtml: a line per type', () => {
+  const html = monthEndCardHtml(MONTH_END);
+  assert.match(html, /Car Service[\s\S]*R3,000<\/strong> <span class="pb-monthend__dest">\u2192 carried/);
+  assert.match(html, /Dining Out[\s\S]*R45<\/strong> <span class="pb-monthend__dest">\u2192 Savings/);
+  assert.match(html, /Petrol[\s\S]*pb-monthend__dest--reset">\u2192 reset/);
+});
+
+test('monthEndCardHtml: at most 5 lines', () => {
+  const items = Array.from({ length: 8 }, (_, i) => ({ name: `Pocket${i}`, type: 'carry', amount: 10 }));
+  const html = monthEndCardHtml({ fromMonth: '2026-01', items, totals: { all: 80 } });
+  assert.equal((html.match(/pb-monthend__name/g) || []).length, 5);
+  assert.match(html, /January wrapped up/);
+});
+
+test('monthEndCardHtml: escapes names', () => {
+  const html = monthEndCardHtml({
+    fromMonth: '2026-10',
+    items: [{ name: '<img src=x>', type: 'sweep', amount: 5, toName: '"><b>' }],
+    totals: { all: 5 },
+  });
+  assert.ok(!html.includes('<img'));
+  assert.ok(!html.includes('<b>'));
+  assert.match(html, /&lt;img src=x&gt;/);
 });

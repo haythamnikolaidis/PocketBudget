@@ -366,6 +366,55 @@ export function renderSummary(container, summary, pockets, pace = null) {
   mount(container, summaryHtml(summary, pockets, pace));
 }
 
+const FULL_MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+  'August', 'September', 'October', 'November', 'December'];
+
+/** "2026-10" -> "October"; anything unreadable -> ''. */
+function monthName(key) {
+  const m = /^\d{4}-(\d{2})$/.exec(String(key ?? ''));
+  return m ? FULL_MONTH_NAMES[Number(m[1]) - 1] || '' : '';
+}
+
+/**
+ * The "<Month> wrapped up" card on Home: what happened to last month's
+ * leftovers. Empty string when there is no month-end to show. At most five
+ * lines; every value is escaped.
+ */
+export function monthEndCardHtml(monthEnd) {
+  if (!monthEnd || typeof monthEnd !== 'object') return '';
+  const items = Array.isArray(monthEnd.items) ? monthEnd.items : [];
+  const totals = monthEnd.totals || {};
+  const title = `${monthName(monthEnd.fromMonth)} wrapped up`.trim();
+  const count = items.length;
+  const summary = `${formatRand(totals.all)} left over in ${count} ${count === 1 ? 'pocket' : 'pockets'}. Here's where it went.`;
+  const lines = items.slice(0, 5).map((it) => {
+    const item = it || {};
+    let dest;
+    if (item.type === 'sweep') dest = `<span class="pb-monthend__dest">\u2192 ${esc(item.toName)}</span>`;
+    else if (item.type === 'forfeit') dest = '<span class="pb-monthend__dest pb-monthend__dest--reset">\u2192 reset</span>';
+    else dest = '<span class="pb-monthend__dest">\u2192 carried</span>';
+    return `<span class="pb-monthend__name">${esc(item.name)}</span>` +
+      `<span class="pb-monthend__val"><strong>${esc(formatRand(item.amount))}</strong> ${dest}</span>`;
+  }).join('');
+  return (
+    `<section class="pb-monthend" aria-labelledby="month-end-title">` +
+    `<div class="pb-monthend__head"><div>` +
+    `<h2 id="month-end-title" class="pb-monthend__title">${esc(title)}</h2>` +
+    `<p class="pb-monthend__sub">${esc(summary)}</p></div>` +
+    `<button type="button" class="pb-monthend__x" data-action="monthend-dismiss" aria-label="Dismiss">\u2715</button></div>` +
+    `<div class="pb-monthend__lines">${lines}</div>` +
+    `<div class="pb-monthend__actions">` +
+    `<button type="button" class="pb-monthend__btn" data-action="monthend-review">Review &amp; change</button>` +
+    `<button type="button" class="pb-monthend__btn pb-monthend__btn--ok" data-action="monthend-dismiss">Looks good</button>` +
+    `</div></section>`
+  );
+}
+
+/** Paint the month-end card into its container (empty when null). */
+export function renderMonthEnd(container, monthEnd) {
+  mount(container, monthEndCardHtml(monthEnd));
+}
+
 /**
  * One Savings row: name, balance, a carry pill if any, and a line saying where
  * the money comes from. Savings has no limit, so it is never depleted or locked,
