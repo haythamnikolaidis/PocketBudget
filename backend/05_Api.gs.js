@@ -237,6 +237,53 @@ export function getState(params) {
   });
 }
 
+/** Dollars (or a stored number) to whole cents. */
+const toCents = (n) => Math.round(Number(n) * 100);
+
+/**
+ * Where a pocket's money went this month, worked in cents and returned in dollars.
+ * `left = limit + carriedIn + movedIn - movedOut - spent`.
+ */
+export function pocketBreakdown(pocket, transactions = [], adjustments = []) {
+  const moves = adjustments.filter((a) => a.type === 'transfer' || a.type === 'sweep');
+  const movedIn = moves.filter((a) => a.toPocketId === pocket.id).reduce((s, a) => s + toCents(a.amount), 0);
+  const movedOut = moves.filter((a) => a.fromPocketId === pocket.id).reduce((s, a) => s + toCents(a.amount), 0);
+  const spent = transactions.reduce((s, t) => s + toCents(t.amount), 0);
+  const limit = toCents(pocket.limit);
+  const carriedIn = toCents(pocket.carriedIn || 0);
+  return {
+    limit: toDollars(limit),
+    carriedIn: toDollars(carriedIn),
+    movedIn: toDollars(movedIn),
+    movedOut: toDollars(movedOut),
+    spent: toDollars(spent),
+    count: transactions.length,
+    left: toDollars(limit + carriedIn + movedIn - movedOut - spent),
+  };
+}
+
+/** One pocket's month: its transactions, the adjustments touching it, and the breakdown. A read: no lock. */
+export function getPocket(params) {
+  if (!verifyToken(params.token)) return fail('UNAUTHORIZED', 'Invalid or missing token.');
+
+  const pocketId = String(params.pocketId ?? '');
+  const pocket = readPockets({ includeArchived: true }).find((p) => p.id === pocketId);
+  if (!pocket) return fail('POCKET_NOT_FOUND', 'Pocket not found: ' + pocketId);
+
+  const month = params.month || monthKey(new Date());
+  const transactions = readRecentTransactions({ month }).filter((t) =>
+    t.pocketId === pocketId && t.timestamp && monthKey(new Date(t.timestamp)) === month);
+  const adjustments = readAdjustments({ month }).filter((a) =>
+    a.fromPocketId === pocketId || a.toPocketId === pocketId);
+
+  return ok({
+    pocket: presentPocket(pocket),
+    transactions,
+    adjustments,
+    breakdown: pocketBreakdown(pocket, transactions, adjustments),
+  });
+}
+
 export function createPocket(params) {
   if (!verifyToken(params.token)) return fail('UNAUTHORIZED', 'Invalid or missing token.');
 
@@ -638,6 +685,7 @@ const HANDLERS = {
   createTransaction,
   deleteTransaction,
   transferFunds,
+  getPocket,
 };
 
 /**

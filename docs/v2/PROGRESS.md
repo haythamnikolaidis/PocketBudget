@@ -35,7 +35,7 @@ Type `HUMAN` = the agent stops there and a person deploys and checks the milesto
 | T25 | [`getState.monthEnd`](tasks/T25-monthend-api.md) | M2 | backend | done |
 | T26 | [Month-end card on Home](tasks/T26-monthend-card.md) | M2 | frontend | done |
 | T27 | [Month-end review screen](tasks/T27-monthend-review.md) | M2 | frontend | done |
-| T28 | [`getPocket` API action](tasks/T28-getpocket-api.md) | M2 | backend | todo |
+| T28 | [`getPocket` API action](tasks/T28-getpocket-api.md) | M2 | backend | done |
 | T29 | [Pocket detail screen](tasks/T29-pocket-detail.md) | M2 | frontend | todo |
 | T30 | [M2 release prep](tasks/T30-m2-release.md) | M2 | docs | todo |
 | T31 | [HUMAN: deploy and check M2](tasks/T31-m2-human.md) | M2 | HUMAN | todo |
