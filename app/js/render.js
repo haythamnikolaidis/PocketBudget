@@ -376,7 +376,7 @@ export function savingsRowHtml(p, opts = {}) {
   const name = String(pocket.name ?? '');
   const carryText = carryPillText(pocket, opts && opts.month);
   return (
-    `<button type="button" class="pb-pocket pb-savings grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1` +
+    `<button type="button" class="pb-pocket pb-savings grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2` +
     ` border-b border-slate-800 py-3 text-left"` +
     ` data-action="select-pocket" data-pocket-id="${esc(pocket.id)}" data-status="ok"` +
     ` aria-label="${esc(`Add expense to ${name}, ${formatMoney(pocket.balance)} saved`)}">` +
