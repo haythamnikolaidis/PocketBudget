@@ -441,7 +441,7 @@ export function deleteTransaction(params) {
     const inCurrentMonth = Boolean(record.timestamp)
       && monthKey(new Date(record.timestamp)) === monthKey(new Date());
     if (pocket && inCurrentMonth) {
-      refunded = r2(Math.min(pocket.limit, pocket.balance + record.amount));
+      refunded = r2(pocket.balance + record.amount);
       writeBalance(record.pocketId, refunded);
       try {
         deleteTransactionRow(txnId);

@@ -132,12 +132,14 @@ test('money() and the too-large message use rand, never dollars', () => {
 });
 
 
-test('balanceAfterLimitChange: the balance moves with the limit, within 0..newLimit', () => {
+test('balanceAfterLimitChange: the balance moves with the limit, never below 0', () => {
   assert.equal(balanceAfterLimitChange(500, 800, 1000), 700);
   assert.equal(balanceAfterLimitChange(500, 800, 600), 300);
   assert.equal(balanceAfterLimitChange(100, 800, 600), 0, 'floors at zero');
   assert.equal(balanceAfterLimitChange(0, 800, 1000), 200, 'a depleted pocket gets the extra');
   assert.equal(balanceAfterLimitChange(800, 800, 1000), 1000, 'an untouched pocket tracks its limit');
+  assert.equal(balanceAfterLimitChange(4120, 4000, 3500), 3620, 'a balance above the limit is not capped');
+  assert.equal(balanceAfterLimitChange(4120, 4000, 5000), 5120, 'raising keeps the extra carried money');
   assert.equal(balanceAfterLimitChange(0.1, 0.3, 0.6), 0.4, 'no float drift');
 });
 

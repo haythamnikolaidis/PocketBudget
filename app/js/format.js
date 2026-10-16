@@ -31,14 +31,14 @@ export function parseAmountText(input) {
 
 /**
  * Balance after a limit change: it moves with the limit (what was spent stays
- * spent), within 0..newLimit. Mirror of balanceAfterLimitChange in
+ * spent), never below 0. Mirror of balanceAfterLimitChange in
  * backend/01_Utils.gs.js — the server is authoritative, this only previews it.
  */
 export function balanceAfterLimitChange(balance, oldLimit, newLimit) {
   const bal = Math.round(Number(balance) * 100);
   const oldC = Math.round(Number(oldLimit) * 100);
   const newC = Math.round(Number(newLimit) * 100);
-  return Math.max(0, Math.min(newC, bal + (newC - oldC))) / 100;
+  return Math.max(0, bal + (newC - oldC)) / 100;
 }
 
 /** Rand amount as 'R1,234.56' (negatives as '-R1,234.56'). */

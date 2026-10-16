@@ -13,9 +13,9 @@
 //
 // Two behaviours are load-bearing and easy to get subtly wrong:
 //
-//   1. The backend clamps a pocket's balance to its new limit (updatePocketRow
-//      writes Math.min(Math.max(cur, 0), limit)). Lowering a limit under the
-//      current balance therefore *reduces the balance*, server-side, with no
+//   1. The backend moves a pocket's balance with its limit (updatePocketRow uses
+//      balanceAfterLimitChange, floored at zero). Lowering a limit therefore
+//      *reduces the balance*, server-side, with no
 //      further prompt. Every path that can lower a limit under the balance says
 //      so in plain words before the request goes out.
 //   2. An archived pocket must not be editable here. It is filtered out of the

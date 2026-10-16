@@ -188,9 +188,8 @@ test('deleteTransaction refunds the pocket and never pushes it over its limit', 
   restore();
 });
 
-test('deleteTransaction clamps the refund at the pocket limit', () => {
-  // Balance 90, limit 100. A stale row claiming R50 must refund only R10,
-  // never push the balance to 140.
+test('deleteTransaction refunds the full amount even above the pocket limit', () => {
+  // Balance 90, limit 100 (as after a carry-over). Refunding R50 gives 140.
   const wbSeed = freshWorkbook([['P01', 'Groceries', 'Chase', 100, 90, 'Active']], []);
   wbSeed.txns.appendRow(['T1001', new Date(), 'Alex', 'P01', 50, 'stale row']);
   const ss = { getSheetByName: (n) => (n === 'Pockets' ? wbSeed.pockets : n === 'Transactions' ? wbSeed.txns : wbSeed.report) };
@@ -202,6 +201,6 @@ test('deleteTransaction clamps the refund at the pocket limit', () => {
 
   const del = deleteTransaction({ token: TOKEN, txnId: 'T1001' });
   assert.equal(del.ok, true);
-  assert.equal(del.pocket.balance, 100, 'must clamp to the limit, not 140');
+  assert.equal(del.pocket.balance, 140, 'full refund, not capped at the limit');
   restore();
 });

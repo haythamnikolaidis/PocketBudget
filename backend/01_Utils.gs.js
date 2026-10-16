@@ -45,13 +45,13 @@ export function toCents(v) {
  * -> balance 700. Raising the limit of a depleted pocket therefore gives it money
  * (the old rule only clamped, so it gave nothing and the UI's own advice to
  * "raise its limit" did not work). Lowering is symmetric, so raising and then
- * lowering a limit cannot create money. Never below 0, never above the new limit.
+ * lowering a limit cannot create money. Never below 0; a balance carried over from earlier months may exceed the limit.
  */
 export function balanceAfterLimitChange(balance, oldLimit, newLimit) {
   const bal = Math.round(Number(balance) * 100);
   const oldC = Math.round(Number(oldLimit) * 100);
   const newC = Math.round(Number(newLimit) * 100);
-  return Math.max(0, Math.min(newC, bal + (newC - oldC))) / 100;
+  return Math.max(0, bal + (newC - oldC)) / 100;
 }
 
 export function toDollars(cents) {
