@@ -109,6 +109,26 @@ function presentPocket(p, spentByPocket = {}) {
   };
 }
 
+/**
+ * Validate a leftover rule for a pocket. Returns an error envelope, or null when fine.
+ * `selfId` is the pocket being edited ('' for a new one) so Sweep cannot point at itself.
+ */
+function checkRule(rule, sweepTo, limitCents, selfId) {
+  if (rule !== 'Carry' && rule !== 'Reset' && rule !== 'Sweep') {
+    return fail('INVALID_RULE', 'Leftover rule must be Carry, Reset or Sweep.');
+  }
+  if (rule === 'Sweep') {
+    const target = readPockets().find((p) => p.id === sweepTo);
+    if (!target || target.id === selfId) {
+      return fail('INVALID_RULE', 'Sweep needs another active pocket to move the leftover into.');
+    }
+  }
+  if (limitCents === 0 && rule === 'Reset') {
+    return fail('INVALID_AMOUNT', 'A pocket that resets needs a monthly limit above R0.');
+  }
+  return null;
+}
+
 /* --------------------------------------------------------------- handlers -- */
 
 /** Liveness + version. Still requires a token, so it doubles as a config check. */
@@ -183,7 +203,10 @@ export function createPocket(params) {
   } catch (err) {
     return fail('INVALID_AMOUNT', err.message);
   }
-  if (limitCents === 0) return fail('INVALID_AMOUNT', 'Monthly limit must be greater than zero.');
+  const rule = params.rule == null ? 'Carry' : String(params.rule);
+  const sweepTo = rule === 'Sweep' ? String(params.sweepTo ?? '') : '';
+  const ruleProblem = checkRule(rule, sweepTo, limitCents, '');
+  if (ruleProblem) return ruleProblem;
 
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(LOCK_TIMEOUT_MS)) {
@@ -191,7 +214,7 @@ export function createPocket(params) {
   }
   try {
     rolloverIfDue();
-    const pocket = appendPocket({ name, account: String(params.account ?? '').trim(), limit: toDollars(limitCents) });
+    const pocket = appendPocket({ name, account: String(params.account ?? '').trim(), limit: toDollars(limitCents), rule, sweepTo });
     return ok({ pocket: presentPocket(pocket) });
   } finally {
     unlock(lock);
@@ -216,21 +239,32 @@ export function updatePocket(params) {
   }
 
   let limit;
+  let limitCents;
   if (params.limit != null) {
-    let limitCents;
     try {
       limitCents = parseAmountInput(params.limit);
     } catch (err) {
       return fail('INVALID_AMOUNT', err.message);
     }
-    if (limitCents === 0) return fail('INVALID_AMOUNT', 'Monthly limit must be greater than zero.');
     limit = toDollars(limitCents);
   }
+
+  // Check the rule and limit as they will be after this update, not just the fields sent.
+  const current = readPockets({ includeArchived: true }).find((p) => p.id === pocketId);
+  const rule = params.rule != null ? String(params.rule) : current.rule;
+  const sweepTo = rule === 'Sweep' ? String(params.sweepTo ?? current.sweepTo) : '';
+  const effectiveLimitCents = limitCents != null ? limitCents : parseAmountInput(current.limit);
+  const ruleProblem = checkRule(rule, sweepTo, effectiveLimitCents, pocketId);
+  if (ruleProblem) return ruleProblem;
 
   const patch = {};
   if (params.name != null) patch.name = String(params.name).trim();
   if (params.account != null) patch.account = String(params.account).trim();
   if (limit != null) patch.limit = limit;
+  if (params.rule != null || params.sweepTo != null) {
+    patch.rule = rule;
+    patch.sweepTo = sweepTo;
+  }
   if (params.archive === true) patch.status = 'Archived';
   if (params.unarchive === true) patch.status = 'Active';
 

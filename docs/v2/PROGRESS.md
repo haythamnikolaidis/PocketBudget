@@ -24,7 +24,7 @@ Type `HUMAN` = the agent stops there and a person deploys and checks the milesto
 | T14 | [Move money screen](tasks/T14-move-screen.md) | M2 | frontend | done |
 | T15 | [Leftover rules in `applyRollover` (pure)](tasks/T15-rollover-rules-pure.md) | M2 | backend | done |
 | T16 | [Write leftover results during rollover](tasks/T16-rollover-persist.md) | M2 | backend | done |
-| T17 | [Pocket rule in `createPocket` / `updatePocket`](tasks/T17-pocket-rule-api.md) | M2 | backend | todo |
+| T17 | [Pocket rule in `createPocket` / `updatePocket`](tasks/T17-pocket-rule-api.md) | M2 | backend | done |
 | T18 | [`migrateV2` creates the Savings pocket](tasks/T18-savings-pocket.md) | M2 | backend | todo |
 | T19 | [Stop capping balances at the monthly limit](tasks/T19-remove-clamps.md) | M2 | backend+frontend | todo |
 | T20 | [v2 fields in the API pocket object and summary](tasks/T20-present-pocket-v2.md) | M2 | backend | todo |

@@ -282,15 +282,15 @@ export function writePocketRollover(pocketId, balance, carriedIn) {
   sheet.getRange(row, 9).setValue(carriedIn);
 }
 
-export function appendPocket({ name, account, limit }) {
+export function appendPocket({ name, account, limit, rule = 'Carry', sweepTo = '', kind = 'Spend' }) {
   const sheet = getPocketSheet();
   const id = issueId(nextPocketIdFromSheet(), PROP_LAST_POCKET);
   // escapeCell: a name like =IMPORTDATA(...) would otherwise be stored as a live formula.
-  sheet.appendRow([id, escapeCell(name), escapeCell(account), limit, limit, 'Active']);
-  return { id, name, account, limit, balance: limit, status: 'Active' };
+  sheet.appendRow([id, escapeCell(name), escapeCell(account), limit, limit, 'Active', rule, sweepTo, 0, kind]);
+  return { id, name, account, limit, balance: limit, status: 'Active', rule, sweepTo, carriedIn: 0, kind };
 }
 
-export function updatePocketRow(pocketId, { name, account, limit, status }) {
+export function updatePocketRow(pocketId, { name, account, limit, status, rule, sweepTo }) {
   const row = findPocketRow(pocketId);
   if (!row) throw new Error('Pocket not found: ' + pocketId);
   const sheet = getPocketSheet();
@@ -304,6 +304,8 @@ export function updatePocketRow(pocketId, { name, account, limit, status }) {
     sheet.getRange(row, 5).setValue(balanceAfterLimitChange(cur, oldLimit, limit));
   }
   if (status != null) sheet.getRange(row, 6).setValue(status);
+  if (rule != null) sheet.getRange(row, 7).setValue(rule);
+  if (sweepTo != null) sheet.getRange(row, 8).setValue(sweepTo);
   return readPockets({ includeArchived: true }).find((p) => p.id === pocketId) || null;
 }
 
