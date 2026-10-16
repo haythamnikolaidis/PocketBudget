@@ -554,7 +554,7 @@ export function boot(deps = {}) {
     // Pace only means something for the month the payload describes; a stale
     // cached payload from last month gets plain thresholds and no tick.
     const pace = monthProgress(new Date(), payload.month);
-    pocketFilter = renderPockets(els.pockets, pockets, { pace, filter: pocketFilter });
+    pocketFilter = renderPockets(els.pockets, pockets, { pace, filter: pocketFilter, month: payload.month });
     renderSummary(els.homeSummary, payload.summary, pockets, pace);
     if (els.homeDay) els.homeDay.textContent = dayLabel(pace);
   }

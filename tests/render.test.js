@@ -8,6 +8,8 @@ import assert from 'node:assert/strict';
 
 import {
   esc,
+  barSegments,
+  carryPillText,
   pocketRowHtml,
   pocketStatus,
   summaryHtml,
@@ -619,4 +621,77 @@ test('activityRowHtml uses light text for the note, meta and amount (the page is
   assert.match(html, /pb-row__meta[^"]*text-slate-400/);
   assert.match(html, /pb-row__amount[^"]*text-slate-100/);
   assert.doesNotMatch(html, /pb-row__(note|meta|amount)[^"]*text-slate-(500|600|700|800|900)/);
+});
+
+/* ------------------------------------------------- carried-in bar and pills -- */
+
+const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} !== ${b}`);
+
+test('barSegments without carry is all this month, as a share of the limit', () => {
+  const s = barSegments({ limit: 1000, available: 1000, balance: 250, carriedIn: 0 });
+  near(s.own, 25);
+  assert.equal(s.carried, 0);
+});
+
+test('barSegments falls back to the limit when available is missing', () => {
+  near(barSegments({ limit: 800, balance: 400 }).own, 50);
+});
+
+test('barSegments with carry and nothing spent splits limit and carried', () => {
+  const s = barSegments({ limit: 1000, available: 1200, balance: 1200, carriedIn: 200 });
+  near(s.own, (1000 / 1200) * 100);
+  near(s.carried, (200 / 1200) * 100);
+});
+
+test('barSegments with carry and partly spent takes the spending from this month first', () => {
+  const s = barSegments({ limit: 1000, available: 1200, balance: 600, carriedIn: 200 });
+  near(s.own, (400 / 1200) * 100);
+  near(s.carried, (200 / 1200) * 100);
+});
+
+test('barSegments shrinks the carried part once the balance is below it', () => {
+  const s = barSegments({ limit: 1000, available: 1200, balance: 120, carriedIn: 200 });
+  assert.equal(s.own, 0);
+  near(s.carried, 10);
+});
+
+test('barSegments never adds up to more than 100 when the balance exceeds available', () => {
+  const s = barSegments({ limit: 1000, available: 1200, balance: 5000, carriedIn: 200 });
+  assert.ok(s.own + s.carried <= 100 + 1e-9);
+});
+
+test('carryPillText names the month before, across a year boundary', () => {
+  assert.equal(carryPillText({ carriedIn: 120 }, '2026-11'), '+R120 from Oct');
+  assert.equal(carryPillText({ carriedIn: 120 }, '2027-01'), '+R120 from Dec');
+});
+
+test('carryPillText is empty when nothing was carried in', () => {
+  assert.equal(carryPillText({ carriedIn: 0 }, '2026-11'), '');
+  assert.equal(carryPillText({}, '2026-11'), '');
+});
+
+test('pocketRowHtml shows the carry pill, a carried segment and no limit when money was carried in', () => {
+  const html = pocketRowHtml({ ...POCKET, limit: 1000, available: 1120, balance: 1120, carriedIn: 120, rule: 'Carry' },
+    null, { month: '2026-11' });
+  assert.match(html, /\+R120 from Oct/);
+  assert.match(html, /pb-carry /);
+  assert.doesNotMatch(html, /pb-pocket__limit/);
+  assert.doesNotMatch(html, /pb-pocket__reset/);
+});
+
+test('pocketRowHtml shows a Reset pill and the limit for a Reset pocket', () => {
+  const html = pocketRowHtml({ ...POCKET, rule: 'Reset', carriedIn: 0 }, null, { month: '2026-11' });
+  assert.match(html, /pb-pocket__reset[^>]*>Reset</);
+  assert.match(html, /pb-pocket__limit/);
+  assert.doesNotMatch(html, /pb-carry/);
+});
+
+test('renderPockets shows the legend only when some pocket has carried-in money', async () => {
+  await withFakeDom(async (container) => {
+    renderPockets(container, [POCKET], { month: '2026-11' });
+    assert.doesNotMatch(container.templateInner, /Carried in/);
+    renderPockets(container, [{ ...POCKET, carriedIn: 50, available: 850 }], { month: '2026-11' });
+    assert.match(container.templateInner, /This month's budget/);
+    assert.match(container.templateInner, /Carried in/);
+  });
 });

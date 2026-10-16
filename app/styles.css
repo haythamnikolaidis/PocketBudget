@@ -115,3 +115,9 @@ input[type="number"]::-webkit-inner-spin-button {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
+
+.pb-carry { background: #a7f3d0; }
+.pb-legend__swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.pb-carry-pill { background: #a7f3d0; color: #064e3b; }
+.pb-legend { display: flex; align-items: center; gap: 16px; }
+.pb-legend__item { display: inline-flex; align-items: center; gap: 6px; }
