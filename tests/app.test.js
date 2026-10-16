@@ -193,11 +193,12 @@ const SHELL_IDS = [
   'add-user', 'add-submit', 'add-reason',
   'view-manage', 'manage-list', 'manage-form', 'manage-name',
   'manage-account', 'manage-limit', 'manage-submit', 'manage-reason',
+  'view-pocket', 'pocket-back', 'pocket-heading', 'pocket-body', 'pocket-add', 'pocket-move', 'pocket-settings',
 ];
 
 /** Views that start with class="hidden" in index.html. */
 const HIDDEN_AT_START = [
-  'view-setup', 'view-home', 'view-add', 'view-manage',
+  'view-setup', 'view-home', 'view-add', 'view-manage', 'view-pocket',
   'add-reason', 'manage-reason', 'version-banner', 'stale-banner', 'toast',
 ];
 
@@ -349,7 +350,7 @@ const STATE = {
 
 /** An api double that records every call, so "exactly once" is assertable. */
 function fakeApi({ state = STATE, pingError = null, stateError = null } = {}) {
-  const calls = { ping: 0, getState: 0, deleteTransaction: [], createPocket: [], updatePocket: [] };
+  const calls = { ping: 0, getState: 0, getPocket: [], deleteTransaction: [], createPocket: [], updatePocket: [] };
   return {
     calls,
     ping: async () => {
@@ -361,6 +362,17 @@ function fakeApi({ state = STATE, pingError = null, stateError = null } = {}) {
       calls.getState += 1;
       if (stateError) throw stateError;
       return state;
+    },
+    getPocket: async (id, month) => {
+      calls.getPocket.push([id, month]);
+      const pocket = state.pockets.find((p) => p.id === id);
+      return {
+        ok: true,
+        pocket,
+        transactions: [],
+        adjustments: [],
+        breakdown: { limit: pocket.limit, carriedIn: 0, movedIn: 0, movedOut: 0, spent: pocket.spent, count: 1, left: pocket.balance },
+      };
     },
     deleteTransaction: async (id) => { calls.deleteTransaction.push(id); return { ok: true }; },
     createPocket: async (p) => { calls.createPocket.push(p); return { ok: true }; },
@@ -1530,7 +1542,7 @@ test('plain refreshes still coalesce into one request', async () => {
   handle.teardown();
 });
 
-/* ------------------------------------- tapping a pocket row opens Add expense -- */
+/* ----------------------------- tapping a pocket row opens its detail screen -- */
 
 function cardButton(h, pocketId, { disabled = false } = {}) {
   const btn = makeEl('', 'button');
@@ -1541,17 +1553,52 @@ function cardButton(h, pocketId, { disabled = false } = {}) {
   return btn;
 }
 
-test('tapping a pocket row opens the add form with that pocket selected', async () => {
+test('tapping a pocket row opens the pocket detail and loads that pocket', async () => {
+  const h = makeHarness();
+  const api = fakeApi();
+  const handle = await bootIn(h, { config: configuredConfig(), api });
+  await handle.ready;
+
+  h.byId.get('pockets').dispatch('click', { target: cardButton(h, 'P01') });
+  await handle.pending();
+
+  assert.equal(h.byId.get('view-pocket').hidden, false, 'switched to the pocket view');
+  assert.equal(h.byId.get('view-home').hidden, true);
+  assert.equal(h.byId.get('view-add').hidden, true, 'the add form is not opened any more');
+  assert.deepEqual(api.calls.getPocket, [['P01', '2026-10']]);
+  assert.equal(h.byId.get('pocket-heading').textContent, 'Groceries');
+  handle.teardown();
+});
+
+test('Add expense on the pocket detail opens the add form with that pocket selected', async () => {
   const h = makeHarness();
   const handle = await bootIn(h, { config: configuredConfig(), api: fakeApi() });
   await handle.ready;
 
   h.byId.get('pockets').dispatch('click', { target: cardButton(h, 'P01') });
+  h.byId.get('pocket-add').dispatch('click');
 
   assert.equal(h.byId.get('view-add').hidden, false, 'switched to the add view');
-  assert.equal(h.byId.get('view-home').hidden, true);
+  assert.equal(h.byId.get('view-pocket').hidden, true);
   assert.equal(h.byId.get('add-pocket').value, 'P01');
   assert.equal(h.byId.get('add-amount').focused, true, 'cursor is in the amount field');
+  handle.teardown();
+});
+
+test('the pocket detail Back button returns to home; its settings button opens manage', async () => {
+  const h = makeHarness();
+  const handle = await bootIn(h, { config: configuredConfig(), api: fakeApi() });
+  await handle.ready;
+
+  h.byId.get('pockets').dispatch('click', { target: cardButton(h, 'P01') });
+  h.byId.get('pocket-settings').dispatch('click');
+  assert.equal(h.byId.get('view-manage').hidden, false);
+  assert.equal(h.byId.get('view-pocket').hidden, true);
+
+  h.byId.get('pockets').dispatch('click', { target: cardButton(h, 'P01') });
+  h.byId.get('pocket-back').dispatch('click');
+  assert.equal(h.byId.get('view-home').hidden, false);
+  assert.equal(h.byId.get('view-pocket').hidden, true);
   handle.teardown();
 });
 

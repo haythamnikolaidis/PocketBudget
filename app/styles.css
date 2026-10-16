@@ -151,3 +151,37 @@ input[type="number"]::-webkit-inner-spin-button {
 .pb-merev__value--carry { color: #a7f3d0; }
 .pb-merev__value--reset { color: #fcd34d; }
 .pb-merev__done { width: 100%; min-height: 52px; margin-top: 14px; border: 0; border-radius: 14px; background: #10b981; color: #052e1f; font-size: 16px; font-weight: 800; cursor: pointer; }
+
+/* Pocket detail. The section is a column so the action buttons (which live in
+ * index.html) sit between the breakdown card and the month's history, both of
+ * which are rendered into #pocket-body. */
+.pb-pd:not(.hidden) { display: flex; flex-direction: column; }
+.pb-pd #pocket-body { display: contents; }
+.pb-pd__sub { order: 1; margin: 8px 0 0; font-size: 13px; color: #94a3b8; }
+.pb-pd__card { order: 2; margin-top: 16px; padding: 16px; border-radius: 16px; background: #1e293b; }
+.pb-pd__actions { order: 3; display: flex; gap: 8px; margin-top: 12px; }
+.pb-pd__rest { order: 4; }
+.pb-pd__meta { margin: 0; font-size: 12px; color: #94a3b8; }
+.pb-pd__big { margin: 0; font-size: 34px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.pb-pd__bar { display: flex; height: 10px; margin-top: 10px; border-radius: 5px; background: #334155; overflow: hidden; }
+.pb-pd__fill { display: block; height: 100%; background: #10b981; }
+.pb-pd__fill.pb-carry { background: #a7f3d0; }
+.pb-pd__lines { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; margin-top: 14px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.pb-pd__label { color: #94a3b8; }
+.pb-pd__val--in { color: #a7f3d0; }
+.pb-pd__total { padding-top: 6px; border-top: 1px solid #334155; color: #f1f5f9; font-weight: 700; }
+.pb-pd__val--strong { font-weight: 800; }
+.pb-pd__btn { flex: 1; min-height: 48px; padding: 0 16px; border: 1px solid #475569; border-radius: 14px; background: #0f172a; color: #f1f5f9; font-size: 15px; font-weight: 700; cursor: pointer; }
+.pb-pd__btn--main { border: 0; background: #10b981; color: #052e1f; font-weight: 800; }
+.pb-pd__sec { margin: 22px 0 4px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #94a3b8; }
+.pb-pd__rule { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 10px 14px; border: 1px solid #334155; border-radius: 14px; background: #0f172a; color: #f1f5f9; text-align: left; cursor: pointer; }
+.pb-pd__rulename { flex: 1; font-weight: 700; }
+.pb-pd__row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #1e293b; }
+.pb-pd__who { padding: 2px 8px; border-radius: 999px; background: #e2e8f0; color: #1e293b; font-size: 11px; font-weight: 700; }
+.pb-pd__adj { padding: 2px 8px; border-radius: 999px; background: rgba(167, 243, 208, .14); color: #a7f3d0; font-size: 11px; font-weight: 700; }
+.pb-pd__what { min-width: 0; }
+.pb-pd__title { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.pb-pd__what .pb-pd__meta { display: block; }
+.pb-pd__amt { font-weight: 800; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pb-pd__amt--in { color: #a7f3d0; }
+.pb-pd__empty, .pb-pd__more { margin: 16px 0 0; text-align: center; font-size: 13px; color: #94a3b8; }

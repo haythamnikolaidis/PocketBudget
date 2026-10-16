@@ -107,10 +107,6 @@
       <h2 id="savings-heading" class="mt-6 hidden text-sm font-semibold uppercase tracking-wide text-slate-400">Savings</h2>
       <div id="savings" class="mt-2 hidden"></div>
 
-      <button type="button" id="home-move"
-              class="mt-4 w-full rounded-lg border border-slate-500 bg-slate-800 px-4 py-2.5 text-sm
-                     font-medium text-slate-100 hover:bg-slate-700">Move money</button>
-
       <h2 class="mt-8 text-sm font-semibold uppercase tracking-wide text-slate-400">Recent activity</h2>
       <div id="activity" class="mt-2 space-y-1"></div>
     </section>
@@ -236,6 +232,24 @@
               class="mt-4 w-full rounded-lg bg-accent px-4 py-3 text-base font-semibold text-ink disabled:opacity-50">
         Move money
       </button>
+    </section>
+
+    <!-- ---------------------------------------------------------- pocket detail -->
+    <section id="view-pocket" class="pb-pd hidden" aria-labelledby="pocket-heading">
+      <div class="flex items-center gap-3">
+        <button type="button" id="pocket-back" aria-label="Back"
+                class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100">&larr;</button>
+        <h1 id="pocket-heading" class="flex-1 truncate text-2xl font-semibold"></h1>
+        <button type="button" id="pocket-settings" aria-label="Pocket settings"
+                class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100">&#9881;</button>
+      </div>
+
+      <div id="pocket-body"></div>
+
+      <div class="pb-pd__actions">
+        <button type="button" id="pocket-add" class="pb-pd__btn pb-pd__btn--main">Add expense</button>
+        <button type="button" id="pocket-move" class="pb-pd__btn">Move money</button>
+      </div>
     </section>
 
     <!-- -------------------------------------------------------------- management -->

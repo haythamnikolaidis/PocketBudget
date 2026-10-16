@@ -563,6 +563,15 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
     busy = false;
   }
 
+  /** Load one active pocket into the form for editing, as the Edit button does. */
+  teardown.edit = (id) => {
+    const pocket = findPocket(id);
+    if (!pocket) return;
+    loadIntoForm(pocket);
+    setMode(pocket.id);
+    say('');
+  };
+
   /**
    * Take a refreshed payload WITHOUT rebuilding the screen. Re-mounting on every
    * refresh (including the one when you switch back to the app) reset the edit

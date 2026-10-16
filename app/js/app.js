@@ -30,6 +30,7 @@ import { renderPockets, renderSavings, renderSummary, renderMonthEnd, renderMont
 import { mountAddForm, updateAddFormState } from './addform.js';
 import { mountManage, updateManageState } from './manage.js';
 import { mountMove, activePockets } from './move.js';
+import { mountPocket } from './pocket.js';
 
 /**
  * Version of this frontend.
@@ -43,7 +44,7 @@ import { mountMove, activePockets } from './move.js';
 export const CLIENT_VERSION = '2.1.0';
 
 /** The three tabbed views, in tab-bar order. #view-setup is deliberately absent. */
-const VIEWS = ['home', 'add', 'manage', 'move', 'monthend'];
+const VIEWS = ['home', 'add', 'manage', 'move', 'monthend', 'pocket'];
 
 /** How long a toast stays up before it hides itself again. */
 const TOAST_MS = 3200;
@@ -392,7 +393,8 @@ export function boot(deps = {}) {
     viewAdd: byId('view-add'),
     viewManage: byId('view-manage'),
     viewMove: byId('view-move'),
-    homeMove: byId('home-move'),
+    viewPocket: byId('view-pocket'),
+    pocketBack: byId('pocket-back'),
     moveClose: byId('move-close'),
     viewMonthEnd: byId('view-monthend'),
     monthEndBack: byId('monthend-back'),
@@ -409,6 +411,7 @@ export function boot(deps = {}) {
     manage: els.viewManage,
     move: els.viewMove,
     monthend: els.viewMonthEnd,
+    pocket: els.viewPocket,
   };
 
   /** tab buttons, keyed by view name — index.html marks them data-view. */
@@ -450,6 +453,7 @@ export function boot(deps = {}) {
   let teardownAddForm = null;
   let teardownManage = null;
   let moveScreen = null;
+  let pocketScreen = null;
 
   /** Who is holding this phone: the name the add form remembered, else the first household member. */
   function rememberedUser() {
@@ -666,6 +670,35 @@ export function boot(deps = {}) {
       }
     } catch (err) {
       console.warn('[app] move screen failed to mount:', err);
+    }
+
+    try {
+      if (!pocketScreen && views.pocket) {
+        pocketScreen = mountPocket({
+          root: views.pocket,
+          api,
+          getState: () => lastState,
+          onAdd: (id) => {
+            switchView(views, tabs, 'add');
+            if (typeof teardownAddForm === 'function' && typeof teardownAddForm.selectPocket === 'function') {
+              teardownAddForm.selectPocket(String(id));
+            }
+          },
+          onMove: (id) => {
+            if (!moveScreen) return;
+            switchView(views, tabs, 'move');
+            moveScreen.open(String(id));
+          },
+          onSettings: (id) => {
+            switchView(views, tabs, 'manage');
+            if (typeof teardownManage === 'function' && typeof teardownManage.edit === 'function') {
+              teardownManage.edit(String(id));
+            }
+          },
+        });
+      }
+    } catch (err) {
+      console.warn('[app] pocket screen failed to mount:', err);
     }
   }
 
@@ -975,13 +1008,8 @@ export function boot(deps = {}) {
     });
   }
 
-  // Move money: opened from Home (temporary entry point), closed back to Home.
-  on(els.homeMove, 'click', () => {
-    if (!moveScreen) return;
-    const first = activePockets(lastState)[0];
-    switchView(views, tabs, 'move');
-    moveScreen.open(first ? first.id : '');
-  });
+  // Move money: opened from a pocket's detail or the month-end review, closed back to Home.
+  on(els.pocketBack, 'click', () => { switchView(views, tabs, 'home'); });
   on(els.moveClose, 'click', () => { switchView(views, tabs, 'home'); });
 
   // Setup screen.
@@ -1104,8 +1132,8 @@ on(els.setupCancel, 'click', () => {
   on(els.monthEndDone, 'click', finishMonthEnd);
   on(els.monthEndBack, 'click', finishMonthEnd);
 
-  // Tapping a pocket row: jump to the add form with that pocket chosen.
-  // (The card button used to render with nothing listening to it.)
+  // Tapping a pocket row opens that pocket's detail; its Add expense button
+  // leads on to the add form with the pocket chosen.
   on(els.pockets, 'click', (ev) => {
     const target = ev && ev.target && typeof ev.target.closest === 'function' ? ev.target : null;
 
@@ -1124,10 +1152,9 @@ on(els.setupCancel, 'click', () => {
     const dataset = btn.dataset || {};
     const id = dataset.pocketId || (btn.getAttribute && btn.getAttribute('data-pocket-id'));
     if (!id) return;
-    switchView(views, tabs, 'add');
-    if (typeof teardownAddForm === 'function' && typeof teardownAddForm.selectPocket === 'function') {
-      teardownAddForm.selectPocket(String(id));
-    }
+    if (!pocketScreen) return;
+    switchView(views, tabs, 'pocket');
+    pocketScreen.open(String(id));
   });
 
   // The stale banner doubles as the retry affordance: it is the only element on
