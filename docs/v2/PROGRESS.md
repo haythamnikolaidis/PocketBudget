@@ -16,7 +16,7 @@ Type `HUMAN` = the agent stops there and a person deploys and checks the milesto
 | T06 | [Schema: new headers, new sheets, `migrateV2()`](tasks/T06-schema-sheets.md) | M1 | backend | done |
 | T07 | [Pocket defaults + v2 fields in `readPockets`](tasks/T07-pocket-v2-fields.md) | M1 | backend | done |
 | T08 | [M1 release prep](tasks/T08-m1-release.md) | M1 | docs | done |
-| T09 | [HUMAN: deploy and check M1](tasks/T09-m1-human.md) | M1 | HUMAN | todo |
+| T09 | [HUMAN: deploy and check M1](tasks/T09-m1-human.md) | M1 | HUMAN | done |
 | T10 | [Adjustments sheet reads and writes](tasks/T10-adjustments-io.md) | M2 | backend | todo |
 | T11 | [`transferFunds` API action](tasks/T11-transfer-api.md) | M2 | backend | todo |
 | T12 | [`getState` returns this month's adjustments](tasks/T12-getstate-adjustments.md) | M2 | backend | todo |
