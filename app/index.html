@@ -103,6 +103,10 @@
 
       <div id="pockets" class="mt-4"></div>
 
+      <button type="button" id="home-move"
+              class="mt-4 w-full rounded-lg border border-slate-500 bg-slate-800 px-4 py-2.5 text-sm
+                     font-medium text-slate-100 hover:bg-slate-700">Move money</button>
+
       <h2 class="mt-8 text-sm font-semibold uppercase tracking-wide text-slate-400">Recent activity</h2>
       <div id="activity" class="mt-2 space-y-1"></div>
     </section>
@@ -157,6 +161,63 @@
           Save expense
         </button>
       </form>
+    </section>
+
+    <!-- ------------------------------------------------------------ move money -->
+    <section id="view-move" class="hidden" aria-labelledby="move-heading">
+      <div class="flex items-center gap-3">
+        <button type="button" id="move-close" aria-label="Close"
+                class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100">&times;</button>
+        <h1 id="move-heading" class="text-2xl font-semibold">Move money</h1>
+      </div>
+
+      <div class="mt-6 space-y-3">
+        <label class="block">
+          <span class="text-sm text-slate-300">From</span>
+          <select id="move-from"
+                  class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm
+                         focus:border-accent focus:outline-none"></select>
+        </label>
+
+        <button type="button" id="move-swap" aria-label="Swap from and to"
+                class="mx-auto block rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100">&#8645;</button>
+
+        <label class="block">
+          <span class="text-sm text-slate-300">To</span>
+          <select id="move-to"
+                  class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm
+                         focus:border-accent focus:outline-none"></select>
+        </label>
+      </div>
+
+      <div class="mt-4">
+        <label class="block">
+          <span class="text-sm text-slate-300">Amount</span>
+          <input id="move-amount" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00"
+                 class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-2xl
+                        font-semibold focus:border-accent focus:outline-none">
+        </label>
+        <div id="move-quick" class="pb-chips mt-2"></div>
+      </div>
+
+      <label class="mt-4 block">
+        <span class="text-sm text-slate-300">Why <span class="text-slate-500">(optional)</span></span>
+        <input id="move-note" type="text" autocomplete="off" maxlength="120"
+               class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm
+                      focus:border-accent focus:outline-none">
+      </label>
+
+      <div id="move-preview" class="pb-move-preview mt-4"></div>
+      <p class="mt-2 text-xs text-slate-500">
+        Monthly limits stay the same. The move shows in both pockets' history and in the activity feed.
+      </p>
+
+      <p id="move-reason" class="mt-3 hidden rounded-lg bg-rose-500/15 px-3 py-2 text-sm text-rose-200"></p>
+
+      <button type="button" id="move-submit"
+              class="mt-4 w-full rounded-lg bg-accent px-4 py-3 text-base font-semibold text-ink disabled:opacity-50">
+        Move money
+      </button>
     </section>
 
     <!-- -------------------------------------------------------------- management -->

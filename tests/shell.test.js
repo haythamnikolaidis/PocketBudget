@@ -22,6 +22,8 @@ const REQUIRED_IDS = [
   'add-user', 'add-submit', 'add-reason',
   'view-manage', 'manage-list', 'manage-form', 'manage-name',
   'manage-account', 'manage-limit', 'manage-submit', 'manage-reason',
+  'view-move', 'move-close', 'move-from', 'move-to', 'move-swap', 'move-amount', 'move-quick',
+  'move-note', 'move-preview', 'move-reason', 'move-submit', 'home-move',
 ];
 
 test('index.html declares every id the modules query', () => {
@@ -33,7 +35,7 @@ test('three tab views exist and match the tab bar; setup is a fourth, untabbed v
   // view-setup is deliberately NOT in the tab bar — it is shown before the
   // household is configured and hides itself afterwards.
   const views = [...html.matchAll(/id="view-([a-z]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(views.sort(), ['add', 'home', 'manage', 'setup']);
+  assert.deepEqual(views.sort(), ['add', 'home', 'manage', 'move', 'setup']);
 
   const tabs = [...html.matchAll(/data-view="([a-z]+)"/g)].map((m) => m[1]);
   assert.deepEqual(tabs.sort(), ['add', 'home', 'manage']);
@@ -44,7 +46,7 @@ test('three tab views exist and match the tab bar; setup is a fourth, untabbed v
 });
 
 test('every view starts hidden so only one is visible at a time', () => {
-  for (const v of ['home', 'add', 'manage', 'setup']) {
+  for (const v of ['home', 'add', 'manage', 'move', 'setup']) {
     const tag = html.match(new RegExp(`<section id="view-${v}"[^>]*>`))[0];
     assert.match(tag, /class="[^"]*\bhidden\b/, `view-${v} must start hidden`);
   }

@@ -29,6 +29,7 @@ import { formatMoney, monthProgress } from './format.js';
 import { renderPockets, renderSummary, dayLabel, renderActivity } from './render.js';
 import { mountAddForm, updateAddFormState } from './addform.js';
 import { mountManage, updateManageState } from './manage.js';
+import { mountMove, activePockets } from './move.js';
 
 /**
  * Version of this frontend.
@@ -42,7 +43,7 @@ import { mountManage, updateManageState } from './manage.js';
 export const CLIENT_VERSION = '2.1.0';
 
 /** The three tabbed views, in tab-bar order. #view-setup is deliberately absent. */
-const VIEWS = ['home', 'add', 'manage'];
+const VIEWS = ['home', 'add', 'manage', 'move'];
 
 /** How long a toast stays up before it hides itself again. */
 const TOAST_MS = 3200;
@@ -387,6 +388,9 @@ export function boot(deps = {}) {
     viewHome: byId('view-home'),
     viewAdd: byId('view-add'),
     viewManage: byId('view-manage'),
+    viewMove: byId('view-move'),
+    homeMove: byId('home-move'),
+    moveClose: byId('move-close'),
   };
 
   const views = {
@@ -394,6 +398,7 @@ export function boot(deps = {}) {
     home: els.viewHome,
     add: els.viewAdd,
     manage: els.viewManage,
+    move: els.viewMove,
   };
 
   /** tab buttons, keyed by view name — index.html marks them data-view. */
@@ -434,6 +439,18 @@ export function boot(deps = {}) {
   let refreshPromise = null;
   let teardownAddForm = null;
   let teardownManage = null;
+  let moveScreen = null;
+
+  /** Who is holding this phone: the name the add form remembered, else the first household member. */
+  function rememberedUser() {
+    try {
+      const store = (win && win.localStorage) || globalThis.localStorage;
+      const saved = store && typeof store.getItem === 'function' ? store.getItem('pb.user') : '';
+      if (saved) return String(saved);
+    } catch (_) { /* a private window: fall back to the household list */ }
+    const users = lastState && lastState.summary && lastState.summary.users;
+    return Array.isArray(users) && users.length ? String(users[0]) : '';
+  }
   let installState = { installPrompt: null };
   let installNode = null;
   let torn = false;
@@ -603,6 +620,24 @@ export function boot(deps = {}) {
       }
     } catch (err) {
       console.warn('[app] manage screen failed to mount:', err);
+    }
+
+    try {
+      if (!moveScreen && views.move) {
+        moveScreen = mountMove({
+          root: views.move,
+          api,
+          getState: () => lastState,
+          getUser: rememberedUser,
+          onDone: () => {
+            track(refresh({ fresh: true }).then(() => { switchView(views, tabs, 'home'); }));
+          },
+          toast: (message, kind) => toast(message, kind),
+          doc,
+        });
+      }
+    } catch (err) {
+      console.warn('[app] move screen failed to mount:', err);
     }
   }
 
@@ -911,6 +946,15 @@ export function boot(deps = {}) {
       if (name === 'add') showAddScreen();
     });
   }
+
+  // Move money: opened from Home (temporary entry point), closed back to Home.
+  on(els.homeMove, 'click', () => {
+    if (!moveScreen) return;
+    const first = activePockets(lastState)[0];
+    switchView(views, tabs, 'move');
+    moveScreen.open(first ? first.id : '');
+  });
+  on(els.moveClose, 'click', () => { switchView(views, tabs, 'home'); });
 
   // Setup screen.
   //
