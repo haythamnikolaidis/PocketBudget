@@ -17,7 +17,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { mountAddForm, updateAddFormState } from '../app/js/addform.js';
+import {
+  mountAddForm, updateAddFormState, isPocketLocked, resolveSelectedPocketId, describeSubmitFailure,
+} from '../app/js/addform.js';
 import { ApiError } from '../app/js/api.js';
 import { formatMoney } from '../app/js/format.js';
 
@@ -687,4 +689,129 @@ test('other failures do not trigger the stale reload', async () => {
   m.api.createTransaction = () => Promise.reject(new ApiError('NETWORK', 'x'));
   await save(m, '5');
   assert.equal(stale, 0);
+});
+
+/* ------------------------------------------- zero-balance pocket regression -- */
+
+test('isPocketLocked trusts the flag and the balance', () => {
+  assert.equal(isPocketLocked(null), false);
+  assert.equal(isPocketLocked({ balance: 5, isLocked: false }), false);
+  assert.equal(isPocketLocked({ balance: 5, isLocked: true }), true);
+  assert.equal(isPocketLocked({ balance: 0, isLocked: false }), true);
+  assert.equal(isPocketLocked({ balance: -1 }), true);
+});
+
+test('resolveSelectedPocketId keeps a spendable selection', () => {
+  assert.equal(resolveSelectedPocketId(POCKETS, 'P02'), 'P02');
+});
+
+test('resolveSelectedPocketId moves off a depleted pocket to the first enabled one', () => {
+  assert.equal(resolveSelectedPocketId(POCKETS, 'P03'), 'P01');
+});
+
+test('resolveSelectedPocketId moves off a missing pocket or an empty selection', () => {
+  assert.equal(resolveSelectedPocketId(POCKETS, 'GONE'), 'P01');
+  assert.equal(resolveSelectedPocketId(POCKETS, ''), 'P01');
+  assert.equal(resolveSelectedPocketId(POCKETS, undefined), 'P01');
+});
+
+test('resolveSelectedPocketId returns empty when no pocket is enabled', () => {
+  assert.equal(resolveSelectedPocketId([POCKETS[2]], 'P03'), '');
+  assert.equal(resolveSelectedPocketId([], 'P01'), '');
+  assert.equal(resolveSelectedPocketId(null, 'P01'), '');
+});
+
+test('describeSubmitFailure keeps INSUFFICIENT_FUNDS verbatim and flags stale balances', () => {
+  const err = new ApiError('INSUFFICIENT_FUNDS', 'Insufficient funds in Gas. Remaining: R1.00');
+  assert.deepEqual(describeSubmitFailure(err), {
+    message: 'Insufficient funds in Gas. Remaining: R1.00', definitive: true, stale: true,
+  });
+});
+
+test('describeSubmitFailure separates definitive, uncertain and unexpected failures', () => {
+  assert.equal(describeSubmitFailure(new ApiError('POCKET_NOT_FOUND', 'No such pocket')).definitive, true);
+  const timeout = describeSubmitFailure(new ApiError('TIMEOUT', 'slow'));
+  assert.equal(timeout.definitive, false);
+  assert.match(timeout.message, /will not be recorded twice/);
+  const odd = describeSubmitFailure(new Error('boom'));
+  assert.equal(odd.definitive, false);
+  assert.ok(odd.message.length > 0);
+  assert.ok(describeSubmitFailure(undefined).message.length > 0);
+});
+
+test('a pocket spent to zero is deselected on refresh and the next enabled pocket is chosen', async () => {
+  const m = mount();
+  m.view.pocket.value = 'P02';
+  m.view.pocket.dispatch('change');
+  m.view.amount.value = '60';
+  await m.view.form.dispatch('submit');
+  assert.equal(m.calls.length, 1);
+
+  updateAddFormState(m.teardown, {
+    ...state,
+    pockets: [POCKETS[0], { ...POCKETS[1], balance: 0, isLocked: true }, POCKETS[2]],
+  });
+
+  assert.equal(m.view.pocket.value, 'P01', 'the zeroed pocket must not stay selected');
+  assert.equal(m.view.submit.disabled, false);
+  assert.equal(m.view.reason.classList.contains('hidden'), true);
+});
+
+test('reopening the Add screen moves a stale depleted selection to an enabled pocket', () => {
+  const m = mount();
+  m.view.pocket.value = 'P03';
+  m.teardown.ensureSelection();
+  assert.equal(m.view.pocket.value, 'P01');
+  assert.equal(m.view.submit.disabled, false);
+});
+
+test('submitting with a depleted pocket selected is refused visibly and the form stays usable', async () => {
+  const m = mount();
+  m.view.pocket.value = 'P03';
+  m.view.amount.value = '5';
+  await m.view.form.dispatch('submit');
+  assert.equal(m.calls.length, 0, 'nothing may be sent for a depleted pocket');
+  assert.equal(m.teardown.isSubmitting(), false);
+  assert.equal(m.toasts.at(-1).kind, 'error');
+  assert.match(m.view.reason.textContent, /Dining/);
+
+  // Choosing a spendable pocket makes the very next submit work.
+  m.view.pocket.value = 'P01';
+  m.view.pocket.dispatch('change');
+  await m.view.form.dispatch('submit');
+  assert.equal(m.calls.length, 1);
+  assert.equal(m.calls[0].pocketId, 'P01');
+});
+
+test('with every pocket depleted nothing is selected, submit is disabled and a message shows', async () => {
+  const m = mount({ opts: { state: { ...state, pockets: [POCKETS[2]] } } });
+  assert.equal(m.view.pocket.value, '');
+  assert.equal(m.view.submit.disabled, true);
+  assert.equal(m.view.reason.classList.contains('hidden'), false);
+  assert.match(m.view.reason.textContent, /depleted/);
+
+  m.view.amount.value = '5';
+  await m.view.form.dispatch('submit');
+  assert.equal(m.calls.length, 0);
+  assert.equal(m.teardown.isSubmitting(), false);
+  assert.equal(m.toasts.at(-1).kind, 'error');
+});
+
+test('the busy state is reset and an error toast shown when the request throws unexpectedly', async () => {
+  const m = mount();
+  m.api.createTransaction = () => { throw new Error('boom'); };
+  m.view.amount.value = '5';
+  await m.view.form.dispatch('submit');
+  assert.equal(m.teardown.isSubmitting(), false);
+  assert.equal(m.view.submit.disabled, false);
+  assert.equal(m.toasts.at(-1).kind, 'error');
+});
+
+test('a throwing onError or toast cannot leave the form busy', async () => {
+  const m = mount({ opts: { onError: () => { throw new Error('handler'); }, toast: () => { throw new Error('toast'); } } });
+  m.api.createTransaction = () => Promise.reject(new ApiError('TIMEOUT', 'slow'));
+  m.view.amount.value = '5';
+  await m.view.form.dispatch('submit');
+  assert.equal(m.teardown.isSubmitting(), false);
+  assert.equal(m.view.submit.disabled, false);
 });

@@ -896,9 +896,20 @@ export function boot(deps = {}) {
 
   /* ----------------------------------------------------------- wiring -- */
 
+  // Opening Add re-checks the remembered pocket against the live balances, so a
+  // pocket spent down to zero is never left selected.
+  function showAddScreen() {
+    if (teardownAddForm && typeof teardownAddForm.ensureSelection === 'function') {
+      try { teardownAddForm.ensureSelection(); } catch (err) { console.warn('[app] add form selection check failed:', err); }
+    }
+  }
+
   // Tab bar.
   for (const name of VIEWS) {
-    on(tabs[name], 'click', () => { switchView(views, tabs, name); });
+    on(tabs[name], 'click', () => {
+      switchView(views, tabs, name);
+      if (name === 'add') showAddScreen();
+    });
   }
 
   // Setup screen.
