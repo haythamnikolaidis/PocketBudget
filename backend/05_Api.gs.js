@@ -15,7 +15,7 @@ import {
 import { verifyToken, getUsers } from './02_Auth.gs.js';
 import {
   readPockets, readTransactions, readRecentTransactions, readAdjustments, findPocketRow, writeBalance,
-  appendTransaction, appendPocket, updatePocketRow, archivePocketRow,
+  writePocketRollover, getAdjustmentSheet, appendTransaction, appendPocket, updatePocketRow, archivePocketRow,
   deleteTransactionRow, getTransactionRecord, findTransactionByRequestId, flushWrites,
   appendAdjustments, findAdjustmentByRequestId,
 } from './03_Sheets.gs.js';
@@ -38,6 +38,11 @@ function unlock(lock) {
   }
 }
 
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
 /** Roll the month over if it has changed. CALLER MUST HOLD THE SCRIPT LOCK. Returns true if it rolled. */
 export function rolloverIfDue(now = new Date()) {
   const props = PropertiesService.getScriptProperties();
@@ -56,16 +61,18 @@ export function rolloverIfDue(now = new Date()) {
   if (!shouldRollover(lastKey, now)) return false;
 
   const pockets = readPockets({ includeArchived: true });
-  const { pockets: reset, resetCount } = applyRollover(pockets);
-  // Compare against the balance as it WAS. `reset` already holds balance ===
-  // limit for every active pocket, so testing `p.balance !== p.limit` on it
-  // would always be false and the rollover would write nothing to the sheet.
-  pockets.forEach((before, i) => {
-    const after = reset[i];
-    if (after.status === 'Active' && before.balance !== after.balance) {
-      writeBalance(after.id, after.balance);
-    }
+  const fromMonthLabel = MONTH_NAMES[Number(lastKey.slice(5, 7)) - 1] || '';
+  const { pockets: reset, adjustments, resetCount } = applyRollover(pockets, { fromMonthLabel });
+  reset.forEach((after) => {
+    if (after.status === 'Active') writePocketRollover(after.id, after.balance, after.carriedIn);
   });
+  if (adjustments.length) {
+    if (getAdjustmentSheet()) {
+      appendAdjustments(adjustments.map((a) => ({ ...a, month: monthKey(now), user: 'system', timestamp: now })));
+    } else if (typeof Logger !== 'undefined') {
+      Logger.log('PocketBudget rollover: Adjustments sheet is missing, so ' + adjustments.length + ' leftover rows were not recorded. Run migrateV2().');
+    }
+  }
   props.setProperty('LAST_ROLLOVER_KEY', monthKey(now));
   if (typeof Logger !== 'undefined') {
     Logger.log('PocketBudget rollover: reset ' + resetCount + ' pockets for ' + monthKey(now));

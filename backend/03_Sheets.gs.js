@@ -273,6 +273,15 @@ export function writeBalance(pocketId, balance) {
   return balance;
 }
 
+/** Set a pocket's Current Balance (column E) and Carried In (column I) together, as the month rolls over. */
+export function writePocketRollover(pocketId, balance, carriedIn) {
+  const row = findPocketRow(pocketId);
+  if (!row) throw new Error('Pocket not found: ' + pocketId);
+  const sheet = getPocketSheet();
+  sheet.getRange(row, 5).setValue(balance);
+  sheet.getRange(row, 9).setValue(carriedIn);
+}
+
 export function appendPocket({ name, account, limit }) {
   const sheet = getPocketSheet();
   const id = issueId(nextPocketIdFromSheet(), PROP_LAST_POCKET);
