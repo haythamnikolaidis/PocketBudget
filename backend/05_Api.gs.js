@@ -17,6 +17,7 @@ import {
   readPockets, readTransactions, readRecentTransactions, findPocketRow, writeBalance,
   appendTransaction, appendPocket, updatePocketRow, archivePocketRow,
   deleteTransactionRow, getTransactionRecord, findTransactionByRequestId, flushWrites,
+  appendAdjustments, findAdjustmentByRequestId,
 } from './03_Sheets.gs.js';
 import { monthKey, applyRollover, shouldRollover } from './04_Rollover.gs.js';
 
@@ -424,6 +425,120 @@ export function deleteTransaction(params) {
   }
 }
 
+/**
+ * Move money from one pocket to another. Limits never change; only the two balances do.
+ * Same shape as createTransaction: auth -> validate -> lock -> (repeat?) -> re-read ->
+ * check -> record -> write. Both balances are re-read inside the lock, and the source
+ * can never go below zero. A retry with the same requestId changes nothing.
+ */
+export function transferFunds(params) {
+  if (!verifyToken(params.token)) return fail('UNAUTHORIZED', 'Invalid or missing token.');
+
+  const user = String(params.user ?? '');
+  if (!isValidUser(user, getUsers())) return fail('INVALID_USER', 'Unknown user: ' + user);
+
+  const fromPocketId = String(params.fromPocketId ?? '');
+  const toPocketId = String(params.toPocketId ?? '');
+  if (!fromPocketId || !toPocketId) {
+    return fail('INVALID_REQUEST', 'fromPocketId and toPocketId are required.');
+  }
+  if (fromPocketId === toPocketId) {
+    return fail('INVALID_REQUEST', 'Choose two different pockets.');
+  }
+
+  let amountCents;
+  try {
+    amountCents = parseAmountInput(params.amount);
+  } catch (err) {
+    return fail('INVALID_AMOUNT', err.message);
+  }
+  if (amountCents <= 0) return fail('INVALID_AMOUNT', 'Amount must be greater than zero.');
+
+  const note = String(params.note ?? '').trim().slice(0, 120);
+
+  const requestId = params.requestId == null ? '' : String(params.requestId);
+  if (requestId && !isValidRequestId(requestId)) {
+    return fail('INVALID_REQUEST', 'requestId must be 8-64 letters, digits or hyphens.');
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(LOCK_TIMEOUT_MS)) {
+    return fail('BUSY', 'Another update is in progress. Please try again.');
+  }
+
+  try {
+    rolloverIfDue();
+    // A retry of something already recorded: answer with the original, change nothing.
+    const prior = findAdjustmentByRequestId(requestId);
+    if (prior) {
+      const all = readPockets({ includeArchived: true });
+      const currentFrom = all.find((p) => p.id === prior.fromPocketId);
+      const currentTo = all.find((p) => p.id === prior.toPocketId);
+      return ok({
+        adjustment: prior,
+        from: currentFrom ? presentPocket(currentFrom) : null,
+        to: currentTo ? presentPocket(currentTo) : null,
+        duplicate: true,
+      });
+    }
+
+    const all = readPockets({ includeArchived: true });
+    const from = all.find((p) => p.id === fromPocketId);
+    const to = all.find((p) => p.id === toPocketId);
+    if (!from) return fail('POCKET_NOT_FOUND', 'Pocket not found: ' + fromPocketId);
+    if (!to) return fail('POCKET_NOT_FOUND', 'Pocket not found: ' + toPocketId);
+    if (from.status !== 'Active') return fail('POCKET_NOT_FOUND', 'Pocket is not available: ' + fromPocketId);
+    if (to.status !== 'Active') return fail('POCKET_NOT_FOUND', 'Pocket is not available: ' + toPocketId);
+
+    const fromCents = Math.round(from.balance * 100);
+    const toCents = Math.round(to.balance * 100);
+    const remainingCents = fromCents - amountCents;
+
+    // The non-negative guarantee. Moving the exact balance is allowed; over is not.
+    if (remainingCents < 0) {
+      return fail(
+        'INSUFFICIENT_FUNDS',
+        `Insufficient funds in ${from.name}. Remaining: ${money(fromCents)}`,
+        { pocketId: fromPocketId, remaining: toDollars(fromCents), amount: toDollars(amountCents) },
+      );
+    }
+
+    const now = new Date();
+    const fromBalance = toDollars(remainingCents);
+    const toBalance = toDollars(toCents + amountCents);
+    const amount = toDollars(amountCents);
+    const [adjId] = appendAdjustments([{
+      timestamp: now, user, month: monthKey(now), type: 'transfer',
+      fromPocketId, toPocketId, amount, note, requestId,
+    }]);
+
+    writeBalance(fromPocketId, fromBalance);
+    try {
+      writeBalance(toPocketId, toBalance);
+    } catch (err) {
+      try {
+        writeBalance(fromPocketId, from.balance);   // undo the debit
+      } catch (undoErr) {
+        throw new Error(err.message + ' (and the debit to ' + fromPocketId + ' could not be undone)');
+      }
+      throw err;
+    }
+
+    return ok({
+      adjustment: {
+        id: adjId,
+        timestamp: now.toISOString(),
+        user, month: monthKey(now), type: 'transfer',
+        fromPocketId, toPocketId, amount, note, requestId, accountId: '',
+      },
+      from: presentPocket({ ...from, balance: fromBalance }),
+      to: presentPocket({ ...to, balance: toBalance }),
+    });
+  } finally {
+    unlock(lock);
+  }
+}
+
 /* ------------------------------------------------------------- dispatch -- */
 
 const HANDLERS = {
@@ -433,6 +548,7 @@ const HANDLERS = {
   updatePocket,
   createTransaction,
   deleteTransaction,
+  transferFunds,
 };
 
 /**

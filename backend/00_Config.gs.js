@@ -25,6 +25,7 @@ export const ACTIONS = [
   'ping', 'getState',
   'createPocket', 'updatePocket',
   'createTransaction', 'deleteTransaction',
+  'transferFunds',
 ];
 
 /** Version of the deployed backend; returned by ping/getState so the client can warn on mismatch. */
