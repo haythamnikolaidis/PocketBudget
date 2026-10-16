@@ -22,7 +22,7 @@ Type `HUMAN` = the agent stops there and a person deploys and checks the milesto
 | T12 | [`getState` returns this month's adjustments](tasks/T12-getstate-adjustments.md) | M2 | backend | done |
 | T13 | [Move money: pure logic module](tasks/T13-move-logic.md) | M2 | frontend | done |
 | T14 | [Move money screen](tasks/T14-move-screen.md) | M2 | frontend | done |
-| T15 | [Leftover rules in `applyRollover` (pure)](tasks/T15-rollover-rules-pure.md) | M2 | backend | todo |
+| T15 | [Leftover rules in `applyRollover` (pure)](tasks/T15-rollover-rules-pure.md) | M2 | backend | done |
 | T16 | [Write leftover results during rollover](tasks/T16-rollover-persist.md) | M2 | backend | todo |
 | T17 | [Pocket rule in `createPocket` / `updatePocket`](tasks/T17-pocket-rule-api.md) | M2 | backend | todo |
 | T18 | [`migrateV2` creates the Savings pocket](tasks/T18-savings-pocket.md) | M2 | backend | todo |
