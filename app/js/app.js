@@ -29,7 +29,7 @@ import { formatMoney, monthProgress } from './format.js';
 import { renderPockets, renderSavings, renderSummary, renderMonthEnd, renderMonthEndReview, dayLabel, renderActivity } from './render.js';
 import { mountAddForm, updateAddFormState } from './addform.js';
 import { mountManage, updateManageState } from './manage.js';
-import { mountMove, activePockets } from './move.js';
+import { mountMove, activePockets, actingUser } from './move.js';
 import { mountPocket } from './pocket.js';
 
 /**
@@ -455,15 +455,14 @@ export function boot(deps = {}) {
   let moveScreen = null;
   let pocketScreen = null;
 
-  /** Who is holding this phone: the name the add form remembered, else the first household member. */
+  /** Who is holding this phone: the name the add form remembered if the server still lists it, else the first household member. */
   function rememberedUser() {
+    let saved = '';
     try {
       const store = (win && win.localStorage) || globalThis.localStorage;
-      const saved = store && typeof store.getItem === 'function' ? store.getItem('pb.user') : '';
-      if (saved) return String(saved);
+      saved = store && typeof store.getItem === 'function' ? store.getItem('pb.user') || '' : '';
     } catch (_) { /* a private window: fall back to the household list */ }
-    const users = lastState && lastState.summary && lastState.summary.users;
-    return Array.isArray(users) && users.length ? String(users[0]) : '';
+    return actingUser(saved, lastState && lastState.summary && lastState.summary.users);
   }
   let installState = { installPrompt: null };
   let installNode = null;

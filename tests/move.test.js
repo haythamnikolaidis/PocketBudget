@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { activePockets, moveProblem, movePreview, quickAmounts, mountMove } from '../app/js/move.js';
+import {
+  activePockets, moveProblem, movePreview, quickAmounts, mountMove, actingUser, moveFailureMessage,
+} from '../app/js/move.js';
+import { makeApi, ApiError } from '../app/js/api.js';
+import { makeConfig } from '../app/js/config.js';
 
 const state = {
   pockets: [
@@ -76,7 +80,7 @@ class El {
 const IDS = ['move-from', 'move-to', 'move-swap', 'move-amount', 'move-quick', 'move-note',
   'move-preview', 'move-reason', 'move-submit'];
 
-function harness({ transferFunds } = {}) {
+function harness({ transferFunds, getUser = () => 'Sam', apiOverride = null, screenState = state } = {}) {
   const els = Object.fromEntries(IDS.map((id) => [id, new El(id.endsWith('from') || id.endsWith('to') ? 'select' : 'div', id)]));
   const doc = {
     getElementById: (id) => els[id] || null,
@@ -85,14 +89,14 @@ function harness({ transferFunds } = {}) {
   const calls = [];
   const toasts = [];
   let done = 0;
-  const api = {
+  const api = apiOverride || {
     transferFunds: (p) => { calls.push(p); return transferFunds ? transferFunds(p) : Promise.resolve({ ok: true }); },
   };
   const screen = mountMove({
     root: null,
     api,
-    getState: () => state,
-    getUser: () => 'Sam',
+    getState: () => screenState,
+    getUser,
     onDone: () => { done += 1; },
     toast: (message, kind) => toasts.push([message, kind]),
     doc,
@@ -184,4 +188,95 @@ test('swap exchanges the two pockets', async () => {
   await h.els['move-swap'].fire('click');
   assert.equal(h.els['move-from'].value, 'P2');
   assert.equal(h.els['move-to'].value, 'P1');
+});
+
+/* ------------------------------------------------------ the acting user -- */
+
+test('actingUser keeps a remembered name the server lists', () => {
+  assert.equal(actingUser('Sam', ['Alex', 'Sam']), 'Sam');
+});
+
+test('actingUser ignores a remembered name that is not a household member', () => {
+  assert.equal(actingUser('Les', ['Alex', 'Sam']), 'Alex');
+  assert.equal(actingUser('', ['Alex', 'Sam']), 'Alex');
+  assert.equal(actingUser(null, ['Alex', 'Sam']), 'Alex');
+});
+
+test('actingUser with no household list passes the remembered name through', () => {
+  assert.equal(actingUser('Sam', undefined), 'Sam');
+  assert.equal(actingUser('Sam', []), 'Sam');
+  assert.equal(actingUser(null, []), '');
+});
+
+test('moveFailureMessage explains an unknown user and passes other errors through', () => {
+  assert.equal(
+    moveFailureMessage(new ApiError('INVALID_USER', 'Unknown user: Les'), 'Les'),
+    '"Les" is not a household member. Pick your name on the Add screen, then try again.',
+  );
+  assert.equal(moveFailureMessage(new ApiError('BUSY', 'Another update is in progress.'), 'Sam'), 'Another update is in progress.');
+  assert.equal(moveFailureMessage(null, 'Sam'), 'Could not move the money.');
+});
+
+test('Move money puts the acting user on the wire, never a pocket or bank-account field', async () => {
+  const pockets = {
+    pockets: [
+      { id: 'P1', name: 'Groceries', account: 'Les', balance: 150 },
+      { id: 'P2', name: 'Fun', account: 'Ivan', balance: 10 },
+    ],
+  };
+  const sent = [];
+  const fetchImpl = async (url, opts) => {
+    sent.push({ url, opts, body: JSON.parse(opts.body) });
+    return { ok: true, status: 200, json: async () => ({ ok: true }) };
+  };
+  const store = { getItem: (k) => ({ 'pb.endpoint': 'https://script.google.com/macros/s/ABC/exec', 'pb.token': 'tok' })[k] ?? null, setItem: () => {} };
+  const api = makeApi(makeConfig({ store }), { fetchImpl });
+  const h = harness({
+    apiOverride: api,
+    screenState: pockets,
+    getUser: () => actingUser('Les', ['Alex', 'Sam']),
+  });
+  const { els, screen } = h;
+  screen.open('P1');
+  await type(els, '25.50');
+  els['move-note'].value = 'Braai';
+  await els['move-submit'].fire('click');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(sent.length, 1);
+  const body = sent[0].body;
+  assert.equal(body.action, 'transferFunds');
+  assert.equal(body.user, 'Alex');
+  assert.notEqual(body.user, 'Les');
+  assert.notEqual(body.user, 'Ivan');
+  assert.deepEqual(
+    { ...body, requestId: undefined },
+    {
+      action: 'transferFunds', token: 'tok', user: 'Alex', fromPocketId: 'P1', toPocketId: 'P2',
+      amount: 25.5, note: 'Braai', requestId: undefined,
+    },
+  );
+  assert.ok(typeof body.requestId === 'string' && body.requestId.length >= 8);
+  assert.deepEqual(h.toasts, [['Moved R25.50 to Fun.', 'success']]);
+});
+
+test('an unknown-user rejection from the server shows a clear toast', async () => {
+  const h = harness({
+    getUser: () => 'Les',
+    transferFunds: async () => { throw new ApiError('INVALID_USER', 'Unknown user: Les'); },
+  });
+  h.screen.open('P1');
+  await type(h.els, '10');
+  await h.els['move-submit'].fire('click');
+  assert.deepEqual(h.toasts, [['"Les" is not a household member. Pick your name on the Add screen, then try again.', 'error']]);
+  assert.equal(h.done(), 0);
+});
+
+test('with no acting user nothing is sent and the person is told', async () => {
+  const h = harness({ getUser: () => '' });
+  h.screen.open('P1');
+  await type(h.els, '10');
+  await h.els['move-submit'].fire('click');
+  assert.equal(h.calls.length, 0);
+  assert.equal(h.toasts[0][1], 'error');
 });

@@ -52,6 +52,26 @@ export function quickAmounts(balance) {
   return out;
 }
 
+/**
+ * The household member to record a move against: the name remembered on this phone
+ * when the server still lists it, else the first listed member. With no household
+ * list to check against, the remembered name is passed through for the server to judge.
+ */
+export function actingUser(saved, users) {
+  const list = (Array.isArray(users) ? users : []).map((u) => String(u ?? '').trim()).filter(Boolean);
+  const name = String(saved ?? '').trim();
+  if (list.length === 0) return name;
+  return list.includes(name) ? name : list[0];
+}
+
+/** What to tell the person when a move fails; an unknown user gets a way forward. */
+export function moveFailureMessage(err, user) {
+  if (err && err.code === 'INVALID_USER') {
+    return `"${user}" is not a household member. Pick your name on the Add screen, then try again.`;
+  }
+  return err && err.message ? String(err.message) : 'Could not move the money.';
+}
+
 /* ------------------------------------------------------------ the screen -- */
 
 /** A fresh idempotency key: a UUID where available, else a random string of the same shape. */
@@ -191,7 +211,11 @@ export function mountMove({ root, api, getState, getUser, onDone, toast, doc } =
 
     const amount = parseAmountText(text);
     const note = noteEl ? String(noteEl.value || '').trim() : '';
-    const user = typeof getUser === 'function' ? getUser() : '';
+    const user = typeof getUser === 'function' ? String(getUser() ?? '') : '';
+    if (!user) {
+      notify('No household member is set up, so this move cannot be recorded.', 'error');
+      return;
+    }
     const payload = { user, fromPocketId, toPocketId, amount, note };
 
     const fingerprint = JSON.stringify([user, fromPocketId, toPocketId, amount, note]);
@@ -209,7 +233,7 @@ export function mountMove({ root, api, getState, getUser, onDone, toast, doc } =
       notify(`Moved ${formatMoney(amount)} to ${toPocket ? toPocket.name : 'the pocket'}.`, 'success');
       if (typeof onDone === 'function') onDone();
     } catch (err) {
-      notify(err && err.message ? String(err.message) : 'Could not move the money.', 'error');
+      notify(moveFailureMessage(err, user), 'error');
     } finally {
       inFlight = false;
       redraw();

@@ -5,6 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { transferFunds, handleRequest } from '../backend/05_Api.gs.js';
+import { parseRequest } from '../backend/07_Entry.gs.js';
 import { installGlobals, createProps } from './helpers/appsScriptGlobals.js';
 import { freshWorkbook, createSheet } from './helpers/fixtures.js';
 
@@ -193,5 +194,34 @@ test('a failed credit puts the debit back and the error comes out of the dispatc
     assert.equal(r.error, 'SERVER_ERROR');
     assert.equal(row(1)[4], 385, 'the debit was put back');
     assert.equal(row(2)[4], 15);
+  } finally { restore(); }
+});
+
+test('the exact body the Move money screen posts is accepted and credited to the acting user', () => {
+  const { adj, restore, row } = setup();
+  try {
+    const wire = JSON.stringify({
+      action: 'transferFunds', token: TOKEN, user: 'Sam', fromPocketId: 'P01', toPocketId: 'P02',
+      amount: 25.5, note: 'Braai', requestId: 'b1c2d3e4-5f60-4a7b',
+    });
+    const r = parseRequest({ postData: { contents: wire } }, 'POST');
+    const res = handleRequest({ action: r.action, params: r.params });
+    assert.equal(res.ok, true);
+    assert.equal(res.adjustment.user, 'Sam');
+    assert.equal(row(1)[4], 359.5);
+    assert.equal(row(2)[4], 40.5);
+    assert.equal(adj._rows[1][2], 'Sam');
+  } finally { restore(); }
+});
+
+test('a bank-account name in the user field is rejected as an unknown user and moves nothing', () => {
+  const { adj, restore, row } = setup();
+  try {
+    const r = move({ user: 'Chase' });
+    assert.equal(r.ok, false);
+    assert.equal(r.error, 'INVALID_USER');
+    assert.equal(r.message, 'Unknown user: Chase');
+    assert.equal(row(1)[4], 385);
+    assert.equal(adj._rows.length, 1);
   } finally { restore(); }
 });
