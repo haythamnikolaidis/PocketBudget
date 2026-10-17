@@ -737,6 +737,18 @@ test('renderSavings shows the balance and a carry pill', async () => {
   });
 });
 
+test('summaryHtml measures money left against limit plus carried-in, not the limit alone', () => {
+  const html = summaryHtml({ totalBalance: 1200, totalLimit: 1000, totalCarriedIn: 200, totalAvailable: 1200 }, [], null);
+  assert.ok(html.includes('of R1,200 · includes R200 carried in'));
+  assert.ok(html.includes('100%'));
+});
+
+test('pocketRowHtml label reads left of the available amount when money was carried in', () => {
+  const html = pocketRowHtml({ ...POCKET, limit: 1000, available: 1200, balance: 1200, carriedIn: 200, rule: 'Carry' });
+  assert.ok(html.includes('R1,200.00 left of R1,200.00'));
+  assert.ok(!html.includes('R1,200.00 left of R1,000.00'));
+});
+
 test('summaryHtml adds the carried-in note only when something was carried in', () => {
   const base = { totalBalance: 500, totalLimit: 1000 };
   assert.ok(summaryHtml({ ...base, totalCarriedIn: 3980 }, [], null).includes('of R1,000 · includes R3,980 carried in'));

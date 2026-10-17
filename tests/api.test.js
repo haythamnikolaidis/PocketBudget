@@ -261,6 +261,15 @@ test('getState pctUsed is measured against available', () => {
   restore();
 });
 
+test('getState summary totalAvailable is limit plus carried-in, once, for Spend pockets', () => {
+  const { restore } = withApi(V2_POCKETS, SAMPLE_TXNS);
+  const s = getState({ token: TOKEN, month: '2026-10' });
+  assert.equal(s.summary.totalLimit, 1050);
+  assert.equal(s.summary.totalCarriedIn, 100);
+  assert.equal(s.summary.totalAvailable, 1150);   // 800 + 100 + 250; Savings left out
+  restore();
+});
+
 test('getState summary leaves out Savings pockets and totals carried in', () => {
   const { restore } = withApi(V2_POCKETS, SAMPLE_TXNS);
   const s = getState({ token: TOKEN, month: '2026-10' });
