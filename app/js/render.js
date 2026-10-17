@@ -185,7 +185,7 @@ export function pocketRowHtml(p, pace = null, opts = {}) {
   const disabled = locked ? ' disabled aria-disabled="true"' : '';
   const label = locked
     ? `Add expense to ${name}, depleted`
-    : `Add expense to ${name}, ${formatMoney(pocket.balance)} left of ${formatMoney(pocket.limit)}` +
+    : `Add expense to ${name}, ${formatMoney(pocket.balance)} left of ${formatMoney(num(pocket.available) > 0 ? pocket.available : pocket.limit)}` +
       (status === 'ok' ? '' : `, ${STATUS_LABEL[status].toLowerCase()}`);
 
   const accountTag = account
@@ -252,14 +252,15 @@ export function dayLabel(pace) {
  * pockets yet). The day of the month ("Day 7 of 31") sits on the page title's
  * line; see dayLabel().
  *
- * `summary` is the payload's { totalBalance, totalLimit }; `pockets` supplies
+ * `summary` is the payload's { totalBalance, totalLimit, totalAvailable }; `pockets` supplies
  * the "needs a look" count; `pace` is monthProgress()'s result or null.
  */
 export function summaryHtml(summary, pockets, pace = null) {
   const s = summary || {};
   const list = Array.isArray(pockets) ? pockets : [];
   const balance = Number(s.totalBalance);
-  const limit = Number(s.totalLimit);
+  // The balance includes carried-in money, so measure it against limit plus carried-in.
+  const limit = num(s.totalAvailable) > 0 ? Number(s.totalAvailable) : Number(s.totalLimit);
   if (!Number.isFinite(balance) || !Number.isFinite(limit) || limit <= 0) return '';
 
   const pct = Math.max(0, Math.min(100, (balance / limit) * 100));

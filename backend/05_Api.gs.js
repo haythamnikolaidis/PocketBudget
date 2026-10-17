@@ -229,6 +229,7 @@ export function getState(params) {
     monthEnd: buildMonthEnd(readAdjustments({ month: monthKey(new Date()) }), everyPocket, new Date()),
     summary: {
       totalLimit: sum('limit'),
+      totalAvailable: sum('available'),
       totalBalance: sum('balance'),
       totalSpent: sum('spent'),
       totalCarriedIn: sum('carriedIn'),
