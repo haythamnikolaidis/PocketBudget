@@ -237,8 +237,8 @@ export function getState(params) {
   });
 }
 
-/** Dollars (or a stored number) to whole cents. */
-const toCents = (n) => Math.round(Number(n) * 100);
+/** Dollars (or a stored number) to whole cents; lenient, unlike the strict parser `toCents` in 01_Utils. */
+const dollarsToCents = (n) => Math.round(Number(n) * 100);
 
 /**
  * Where a pocket's money went this month, worked in cents and returned in dollars.
@@ -246,11 +246,11 @@ const toCents = (n) => Math.round(Number(n) * 100);
  */
 export function pocketBreakdown(pocket, transactions = [], adjustments = []) {
   const moves = adjustments.filter((a) => a.type === 'transfer' || a.type === 'sweep');
-  const movedIn = moves.filter((a) => a.toPocketId === pocket.id).reduce((s, a) => s + toCents(a.amount), 0);
-  const movedOut = moves.filter((a) => a.fromPocketId === pocket.id).reduce((s, a) => s + toCents(a.amount), 0);
-  const spent = transactions.reduce((s, t) => s + toCents(t.amount), 0);
-  const limit = toCents(pocket.limit);
-  const carriedIn = toCents(pocket.carriedIn || 0);
+  const movedIn = moves.filter((a) => a.toPocketId === pocket.id).reduce((s, a) => s + dollarsToCents(a.amount), 0);
+  const movedOut = moves.filter((a) => a.fromPocketId === pocket.id).reduce((s, a) => s + dollarsToCents(a.amount), 0);
+  const spent = transactions.reduce((s, t) => s + dollarsToCents(t.amount), 0);
+  const limit = dollarsToCents(pocket.limit);
+  const carriedIn = dollarsToCents(pocket.carriedIn || 0);
   return {
     limit: toDollars(limit),
     carriedIn: toDollars(carriedIn),
