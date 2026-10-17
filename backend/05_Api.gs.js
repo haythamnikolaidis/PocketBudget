@@ -14,11 +14,12 @@ import {
 } from './01_Utils.gs.js';
 import { verifyToken, getUsers } from './02_Auth.gs.js';
 import {
-  readPockets, readTransactions, readRecentTransactions, findPocketRow, writeBalance,
-  appendTransaction, appendPocket, updatePocketRow, archivePocketRow,
+  readPockets, readTransactions, readRecentTransactions, readAdjustments, findPocketRow, writeBalance,
+  writePocketRollover, getAdjustmentSheet, appendTransaction, appendPocket, updatePocketRow, archivePocketRow,
   deleteTransactionRow, getTransactionRecord, findTransactionByRequestId, flushWrites,
+  appendAdjustments, findAdjustmentByRequestId,
 } from './03_Sheets.gs.js';
-import { monthKey, applyRollover, shouldRollover } from './04_Rollover.gs.js';
+import { monthKey, localParts, applyRollover, shouldRollover } from './04_Rollover.gs.js';
 
 /* --------------------------------------------------------------- helpers -- */
 
@@ -36,6 +37,11 @@ function unlock(lock) {
     lock.releaseLock();
   }
 }
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
 
 /** Roll the month over if it has changed. CALLER MUST HOLD THE SCRIPT LOCK. Returns true if it rolled. */
 export function rolloverIfDue(now = new Date()) {
@@ -55,16 +61,18 @@ export function rolloverIfDue(now = new Date()) {
   if (!shouldRollover(lastKey, now)) return false;
 
   const pockets = readPockets({ includeArchived: true });
-  const { pockets: reset, resetCount } = applyRollover(pockets);
-  // Compare against the balance as it WAS. `reset` already holds balance ===
-  // limit for every active pocket, so testing `p.balance !== p.limit` on it
-  // would always be false and the rollover would write nothing to the sheet.
-  pockets.forEach((before, i) => {
-    const after = reset[i];
-    if (after.status === 'Active' && before.balance !== after.balance) {
-      writeBalance(after.id, after.balance);
-    }
+  const fromMonthLabel = MONTH_NAMES[Number(lastKey.slice(5, 7)) - 1] || '';
+  const { pockets: reset, adjustments, resetCount } = applyRollover(pockets, { fromMonthLabel });
+  reset.forEach((after) => {
+    if (after.status === 'Active') writePocketRollover(after.id, after.balance, after.carriedIn);
   });
+  if (adjustments.length) {
+    if (getAdjustmentSheet()) {
+      appendAdjustments(adjustments.map((a) => ({ ...a, month: monthKey(now), user: 'system', timestamp: now })));
+    } else if (typeof Logger !== 'undefined') {
+      Logger.log('PocketBudget rollover: Adjustments sheet is missing, so ' + adjustments.length + ' leftover rows were not recorded. Run migrateV2().');
+    }
+  }
   props.setProperty('LAST_ROLLOVER_KEY', monthKey(now));
   if (typeof Logger !== 'undefined') {
     Logger.log('PocketBudget rollover: reset ' + resetCount + ' pockets for ' + monthKey(now));
@@ -89,6 +97,8 @@ function checkText(value, label, required) {
 function presentPocket(p, spentByPocket = {}) {
   const spent = r2(p.limit - p.balance);
   const monthSpent = spentByPocket[p.id] ?? spent;
+  const carriedIn = p.carriedIn || 0;
+  const available = r2(p.limit + carriedIn);
   return {
     id: p.id,
     name: p.name,
@@ -96,9 +106,34 @@ function presentPocket(p, spentByPocket = {}) {
     limit: r2(p.limit),
     balance: r2(p.balance),
     spent: r2(monthSpent),
-    pctUsed: p.limit > 0 ? r2((monthSpent / p.limit) * 100) : 0,
+    pctUsed: available > 0 ? r2((monthSpent / available) * 100) : 0,
     isLocked: p.balance <= 0,
+    rule: p.rule || 'Reset',
+    sweepTo: p.sweepTo || '',
+    carriedIn: r2(carriedIn),
+    kind: p.kind || 'Spend',
+    available,
   };
+}
+
+/**
+ * Validate a leftover rule for a pocket. Returns an error envelope, or null when fine.
+ * `selfId` is the pocket being edited ('' for a new one) so Sweep cannot point at itself.
+ */
+function checkRule(rule, sweepTo, limitCents, selfId) {
+  if (rule !== 'Carry' && rule !== 'Reset' && rule !== 'Sweep') {
+    return fail('INVALID_RULE', 'Leftover rule must be Carry, Reset or Sweep.');
+  }
+  if (rule === 'Sweep') {
+    const target = readPockets().find((p) => p.id === sweepTo);
+    if (!target || target.id === selfId) {
+      return fail('INVALID_RULE', 'Sweep needs another active pocket to move the leftover into.');
+    }
+  }
+  if (limitCents === 0 && rule === 'Reset') {
+    return fail('INVALID_AMOUNT', 'A pocket that resets needs a monthly limit above R0.');
+  }
+  return null;
 }
 
 /* --------------------------------------------------------------- handlers -- */
@@ -107,6 +142,44 @@ function presentPocket(p, spentByPocket = {}) {
 export function ping(params) {
   if (!verifyToken(params.token)) return fail('UNAUTHORIZED', 'Invalid or missing token.');
   return ok({ serverTime: new Date().toISOString() });
+}
+
+/**
+ * The "what happened to last month's leftovers" banner for the first week of a month.
+ * Null after day 7 or when the rollover left nothing to report. Sums are done in cents.
+ */
+export function buildMonthEnd(adjustments, pockets, now = new Date()) {
+  const { year, month, day } = localParts(now);
+  if (day > 7) return null;
+  const nameOf = (id) => {
+    const p = (pockets || []).find((x) => x.id === id);
+    return p ? p.name : '';
+  };
+  const items = (adjustments || [])
+    .filter((a) => a.type === 'carry' || a.type === 'sweep' || a.type === 'forfeit')
+    .map((a) => {
+      const pocketId = a.type === 'carry' ? a.toPocketId : a.fromPocketId;
+      const toPocketId = a.type === 'sweep' ? a.toPocketId : '';
+      return {
+        pocketId, name: nameOf(pocketId), type: a.type, amount: r2(a.amount),
+        toPocketId, toName: toPocketId ? nameOf(toPocketId) : '',
+      };
+    })
+    .sort((a, b) => b.amount - a.amount);
+  if (items.length === 0) return null;
+  const cents = { carry: 0, sweep: 0, forfeit: 0 };
+  for (const it of items) cents[it.type] += Math.round(it.amount * 100);
+  const prev = month === 1 ? { y: year - 1, m: 12 } : { y: year, m: month - 1 };
+  return {
+    fromMonth: prev.y + '-' + String(prev.m).padStart(2, '0'),
+    items,
+    totals: {
+      carried: cents.carry / 100,
+      swept: cents.sweep / 100,
+      forfeited: cents.forfeit / 100,
+      all: (cents.carry + cents.sweep + cents.forfeit) / 100,
+    },
+  };
 }
 
 /**
@@ -144,7 +217,7 @@ export function getState(params) {
   }
 
   const present = pockets.map((p) => presentPocket(p, spentByPocket));
-  const sum = (k) => r2(present.reduce((s, p) => s + p[k], 0));
+  const sum = (k) => r2(present.filter((p) => p.kind !== 'Savings').reduce((s, p) => s + p[k], 0));
 
   return ok({
     serverTime: new Date().toISOString(),
@@ -152,12 +225,62 @@ export function getState(params) {
     pockets: present,
     archivedPockets,
     transactions,
+    adjustments: readAdjustments({ month }),
+    monthEnd: buildMonthEnd(readAdjustments({ month: monthKey(new Date()) }), everyPocket, new Date()),
     summary: {
       totalLimit: sum('limit'),
       totalBalance: sum('balance'),
       totalSpent: sum('spent'),
+      totalCarriedIn: sum('carriedIn'),
       users: getUsers(),
     },
+  });
+}
+
+/** Dollars (or a stored number) to whole cents; lenient, unlike the strict parser `toCents` in 01_Utils. */
+const dollarsToCents = (n) => Math.round(Number(n) * 100);
+
+/**
+ * Where a pocket's money went this month, worked in cents and returned in dollars.
+ * `left = limit + carriedIn + movedIn - movedOut - spent`.
+ */
+export function pocketBreakdown(pocket, transactions = [], adjustments = []) {
+  const moves = adjustments.filter((a) => a.type === 'transfer' || a.type === 'sweep');
+  const movedIn = moves.filter((a) => a.toPocketId === pocket.id).reduce((s, a) => s + dollarsToCents(a.amount), 0);
+  const movedOut = moves.filter((a) => a.fromPocketId === pocket.id).reduce((s, a) => s + dollarsToCents(a.amount), 0);
+  const spent = transactions.reduce((s, t) => s + dollarsToCents(t.amount), 0);
+  const limit = dollarsToCents(pocket.limit);
+  const carriedIn = dollarsToCents(pocket.carriedIn || 0);
+  return {
+    limit: toDollars(limit),
+    carriedIn: toDollars(carriedIn),
+    movedIn: toDollars(movedIn),
+    movedOut: toDollars(movedOut),
+    spent: toDollars(spent),
+    count: transactions.length,
+    left: toDollars(limit + carriedIn + movedIn - movedOut - spent),
+  };
+}
+
+/** One pocket's month: its transactions, the adjustments touching it, and the breakdown. A read: no lock. */
+export function getPocket(params) {
+  if (!verifyToken(params.token)) return fail('UNAUTHORIZED', 'Invalid or missing token.');
+
+  const pocketId = String(params.pocketId ?? '');
+  const pocket = readPockets({ includeArchived: true }).find((p) => p.id === pocketId);
+  if (!pocket) return fail('POCKET_NOT_FOUND', 'Pocket not found: ' + pocketId);
+
+  const month = params.month || monthKey(new Date());
+  const transactions = readRecentTransactions({ month }).filter((t) =>
+    t.pocketId === pocketId && t.timestamp && monthKey(new Date(t.timestamp)) === month);
+  const adjustments = readAdjustments({ month }).filter((a) =>
+    a.fromPocketId === pocketId || a.toPocketId === pocketId);
+
+  return ok({
+    pocket: presentPocket(pocket),
+    transactions,
+    adjustments,
+    breakdown: pocketBreakdown(pocket, transactions, adjustments),
   });
 }
 
@@ -174,7 +297,10 @@ export function createPocket(params) {
   } catch (err) {
     return fail('INVALID_AMOUNT', err.message);
   }
-  if (limitCents === 0) return fail('INVALID_AMOUNT', 'Monthly limit must be greater than zero.');
+  const rule = params.rule == null ? 'Carry' : String(params.rule);
+  const sweepTo = rule === 'Sweep' ? String(params.sweepTo ?? '') : '';
+  const ruleProblem = checkRule(rule, sweepTo, limitCents, '');
+  if (ruleProblem) return ruleProblem;
 
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(LOCK_TIMEOUT_MS)) {
@@ -182,7 +308,7 @@ export function createPocket(params) {
   }
   try {
     rolloverIfDue();
-    const pocket = appendPocket({ name, account: String(params.account ?? '').trim(), limit: toDollars(limitCents) });
+    const pocket = appendPocket({ name, account: String(params.account ?? '').trim(), limit: toDollars(limitCents), rule, sweepTo });
     return ok({ pocket: presentPocket(pocket) });
   } finally {
     unlock(lock);
@@ -207,21 +333,32 @@ export function updatePocket(params) {
   }
 
   let limit;
+  let limitCents;
   if (params.limit != null) {
-    let limitCents;
     try {
       limitCents = parseAmountInput(params.limit);
     } catch (err) {
       return fail('INVALID_AMOUNT', err.message);
     }
-    if (limitCents === 0) return fail('INVALID_AMOUNT', 'Monthly limit must be greater than zero.');
     limit = toDollars(limitCents);
   }
+
+  // Check the rule and limit as they will be after this update, not just the fields sent.
+  const current = readPockets({ includeArchived: true }).find((p) => p.id === pocketId);
+  const rule = params.rule != null ? String(params.rule) : current.rule;
+  const sweepTo = rule === 'Sweep' ? String(params.sweepTo ?? current.sweepTo) : '';
+  const effectiveLimitCents = limitCents != null ? limitCents : parseAmountInput(current.limit);
+  const ruleProblem = checkRule(rule, sweepTo, effectiveLimitCents, pocketId);
+  if (ruleProblem) return ruleProblem;
 
   const patch = {};
   if (params.name != null) patch.name = String(params.name).trim();
   if (params.account != null) patch.account = String(params.account).trim();
   if (limit != null) patch.limit = limit;
+  if (params.rule != null || params.sweepTo != null) {
+    patch.rule = rule;
+    patch.sweepTo = sweepTo;
+  }
   if (params.archive === true) patch.status = 'Archived';
   if (params.unarchive === true) patch.status = 'Active';
 
@@ -398,7 +535,7 @@ export function deleteTransaction(params) {
     const inCurrentMonth = Boolean(record.timestamp)
       && monthKey(new Date(record.timestamp)) === monthKey(new Date());
     if (pocket && inCurrentMonth) {
-      refunded = r2(Math.min(pocket.limit, pocket.balance + record.amount));
+      refunded = r2(pocket.balance + record.amount);
       writeBalance(record.pocketId, refunded);
       try {
         deleteTransactionRow(txnId);
@@ -424,6 +561,120 @@ export function deleteTransaction(params) {
   }
 }
 
+/**
+ * Move money from one pocket to another. Limits never change; only the two balances do.
+ * Same shape as createTransaction: auth -> validate -> lock -> (repeat?) -> re-read ->
+ * check -> record -> write. Both balances are re-read inside the lock, and the source
+ * can never go below zero. A retry with the same requestId changes nothing.
+ */
+export function transferFunds(params) {
+  if (!verifyToken(params.token)) return fail('UNAUTHORIZED', 'Invalid or missing token.');
+
+  const user = String(params.user ?? '');
+  if (!isValidUser(user, getUsers())) return fail('INVALID_USER', 'Unknown user: ' + user);
+
+  const fromPocketId = String(params.fromPocketId ?? '');
+  const toPocketId = String(params.toPocketId ?? '');
+  if (!fromPocketId || !toPocketId) {
+    return fail('INVALID_REQUEST', 'fromPocketId and toPocketId are required.');
+  }
+  if (fromPocketId === toPocketId) {
+    return fail('INVALID_REQUEST', 'Choose two different pockets.');
+  }
+
+  let amountCents;
+  try {
+    amountCents = parseAmountInput(params.amount);
+  } catch (err) {
+    return fail('INVALID_AMOUNT', err.message);
+  }
+  if (amountCents <= 0) return fail('INVALID_AMOUNT', 'Amount must be greater than zero.');
+
+  const note = String(params.note ?? '').trim().slice(0, 120);
+
+  const requestId = params.requestId == null ? '' : String(params.requestId);
+  if (requestId && !isValidRequestId(requestId)) {
+    return fail('INVALID_REQUEST', 'requestId must be 8-64 letters, digits or hyphens.');
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(LOCK_TIMEOUT_MS)) {
+    return fail('BUSY', 'Another update is in progress. Please try again.');
+  }
+
+  try {
+    rolloverIfDue();
+    // A retry of something already recorded: answer with the original, change nothing.
+    const prior = findAdjustmentByRequestId(requestId);
+    if (prior) {
+      const all = readPockets({ includeArchived: true });
+      const currentFrom = all.find((p) => p.id === prior.fromPocketId);
+      const currentTo = all.find((p) => p.id === prior.toPocketId);
+      return ok({
+        adjustment: prior,
+        from: currentFrom ? presentPocket(currentFrom) : null,
+        to: currentTo ? presentPocket(currentTo) : null,
+        duplicate: true,
+      });
+    }
+
+    const all = readPockets({ includeArchived: true });
+    const from = all.find((p) => p.id === fromPocketId);
+    const to = all.find((p) => p.id === toPocketId);
+    if (!from) return fail('POCKET_NOT_FOUND', 'Pocket not found: ' + fromPocketId);
+    if (!to) return fail('POCKET_NOT_FOUND', 'Pocket not found: ' + toPocketId);
+    if (from.status !== 'Active') return fail('POCKET_NOT_FOUND', 'Pocket is not available: ' + fromPocketId);
+    if (to.status !== 'Active') return fail('POCKET_NOT_FOUND', 'Pocket is not available: ' + toPocketId);
+
+    const fromCents = Math.round(from.balance * 100);
+    const toCents = Math.round(to.balance * 100);
+    const remainingCents = fromCents - amountCents;
+
+    // The non-negative guarantee. Moving the exact balance is allowed; over is not.
+    if (remainingCents < 0) {
+      return fail(
+        'INSUFFICIENT_FUNDS',
+        `Insufficient funds in ${from.name}. Remaining: ${money(fromCents)}`,
+        { pocketId: fromPocketId, remaining: toDollars(fromCents), amount: toDollars(amountCents) },
+      );
+    }
+
+    const now = new Date();
+    const fromBalance = toDollars(remainingCents);
+    const toBalance = toDollars(toCents + amountCents);
+    const amount = toDollars(amountCents);
+    const [adjId] = appendAdjustments([{
+      timestamp: now, user, month: monthKey(now), type: 'transfer',
+      fromPocketId, toPocketId, amount, note, requestId,
+    }]);
+
+    writeBalance(fromPocketId, fromBalance);
+    try {
+      writeBalance(toPocketId, toBalance);
+    } catch (err) {
+      try {
+        writeBalance(fromPocketId, from.balance);   // undo the debit
+      } catch (undoErr) {
+        throw new Error(err.message + ' (and the debit to ' + fromPocketId + ' could not be undone)');
+      }
+      throw err;
+    }
+
+    return ok({
+      adjustment: {
+        id: adjId,
+        timestamp: now.toISOString(),
+        user, month: monthKey(now), type: 'transfer',
+        fromPocketId, toPocketId, amount, note, requestId, accountId: '',
+      },
+      from: presentPocket({ ...from, balance: fromBalance }),
+      to: presentPocket({ ...to, balance: toBalance }),
+    });
+  } finally {
+    unlock(lock);
+  }
+}
+
 /* ------------------------------------------------------------- dispatch -- */
 
 const HANDLERS = {
@@ -433,6 +684,8 @@ const HANDLERS = {
   updatePocket,
   createTransaction,
   deleteTransaction,
+  transferFunds,
+  getPocket,
 };
 
 /**

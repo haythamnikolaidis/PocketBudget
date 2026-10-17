@@ -90,10 +90,33 @@ export function pocketStatus(p, pace) {
   return 'ok';
 }
 
-/** Share of the limit still unspent, clamped to [0, 100]. */
-function leftPct(pocket) {
-  const limit = num(pocket.limit);
-  return limit > 0 ? Math.max(0, Math.min(100, (num(pocket.balance) / limit) * 100)) : 0;
+/**
+ * Bar segments as percentages of what was available this month (limit plus
+ * carried-in; the limit alone when `available` is missing). `own` is this
+ * month's money still unspent, `carried` is carried-in money still unspent.
+ */
+export function barSegments(p) {
+  const pocket = p || {};
+  const available = num(pocket.available) > 0 ? num(pocket.available) : num(pocket.limit);
+  if (!(available > 0)) return { own: 0, carried: 0 };
+  const balance = Math.max(0, num(pocket.balance));
+  const carriedLeft = Math.min(Math.max(0, num(pocket.carriedIn)), balance);
+  const ownLeft = balance - carriedLeft;
+  const carried = Math.min(100, (carriedLeft / available) * 100);
+  const own = Math.min(100 - carried, (ownLeft / available) * 100);
+  return { own, carried };
+}
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** '+R120 from Oct' for the month before `month` (YYYY-MM); '' when nothing was carried in. */
+export function carryPillText(p, month) {
+  const carriedIn = num((p || {}).carriedIn);
+  if (!(carriedIn > 0)) return '';
+  const m = /^(\d{4})-(\d{2})$/.exec(String(month ?? ''));
+  const index = m ? Number(m[2]) - 2 : NaN;
+  const name = MONTH_NAMES[((index % 12) + 12) % 12];
+  return m && name ? `+${formatRand(carriedIn)} from ${name}` : `+${formatRand(carriedIn)} carried in`;
 }
 
 function statusPill(status) {
@@ -107,21 +130,38 @@ function statusPill(status) {
  * A progress bar that shows money LEFT, not money used, with a tick at the
  * share that should be left today. Fill past the tick: ahead of the month.
  */
-function barHtml(pct, status, pace, label, heightClass) {
+function barHtml(pct, status, pace, label, heightClass, carriedPct = 0) {
   const width = barWidth(pct);
+  const carriedWidth = barWidth(carriedPct);
+  const carriedFill = num(carriedPct) > 0
+    ? `<span class="pb-carry absolute inset-y-0 block" style="left: ${width}%; width: ${carriedWidth}%"></span>`
+    : '';
+  const total = barWidth(num(pct) + num(carriedPct));
   const tick = pace && Number.isFinite(pace.elapsedPct)
     ? `<span class="pb-pocket__tick absolute -bottom-1 -top-1 -ml-px w-0.5 rounded-sm bg-slate-100/80"` +
       ` style="left: ${barWidth(100 - pace.elapsedPct)}%"></span>`
     : '';
   return (
     `<span class="pb-pocket__bar relative col-span-2 block ${heightClass} w-full rounded-full bg-slate-700" role="progressbar"` +
-    ` aria-valuemin="0" aria-valuemax="100" aria-valuenow="${width}" aria-label="${esc(label)}">` +
+    ` aria-valuemin="0" aria-valuemax="100" aria-valuenow="${total}" aria-label="${esc(label)}">` +
     `<span class="pb-pocket__fill ${FILL_CLASS[status]} absolute inset-y-0 left-0 block rounded-full" style="width: ${width}%"></span>` +
-    `${tick}</span>`
+    `${carriedFill}${tick}</span>`
   );
 }
 
 /* ----------------------------------------------------------- pocket row -- */
+
+function isSavings(p) {
+  return !!p && p.kind === 'Savings';
+}
+
+const RESET_PILL = `<span class="pb-pocket__reset shrink-0 rounded-full bg-slate-700 px-2 py-0.5 text-xs font-semibold text-slate-300">Reset</span>`;
+
+function carryPill(text) {
+  return text
+    ? `<span class="pb-pocket__carry pb-carry-pill shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold">${esc(text)}</span>`
+    : '';
+}
 
 /**
  * One pocket row: name, account, amount LEFT of the limit, and a bar of money
@@ -132,14 +172,16 @@ function barHtml(pct, status, pace, label, heightClass) {
  * the UI states the rule before the user can discover it through a server error.
  * Colour is never the only signal: every non-ok status also has a word.
  */
-export function pocketRowHtml(p, pace = null) {
+export function pocketRowHtml(p, pace = null, opts = {}) {
   const pocket = p || {};
   const status = pocketStatus(pocket, pace);
   const locked = status === 'out';
   const id = esc(pocket.id);
   const account = String(pocket.account ?? '').trim();
   const name = String(pocket.name ?? '');
-  const pct = leftPct(pocket);
+  const seg = barSegments(pocket);
+  const carriedIn = num(pocket.carriedIn);
+  const carryText = carryPillText(pocket, opts && opts.month);
   const disabled = locked ? ' disabled aria-disabled="true"' : '';
   const label = locked
     ? `Add expense to ${name}, depleted`
@@ -157,11 +199,14 @@ export function pocketRowHtml(p, pace = null) {
     ` data-account="${esc(account)}" aria-label="${esc(label)}"${disabled}>` +
     `<span class="flex min-w-0 items-center gap-2">` +
     `<span class="pb-pocket__name truncate text-[15px] font-semibold text-slate-100">${esc(name)}</span>` +
-    `${accountTag}${statusPill(status)}</span>` +
+    `${accountTag}${statusPill(status)}${carryPill(carryText)}${pocket.rule === 'Reset' ? RESET_PILL : ''}</span>` +
     `<span class="pb-pocket__amount whitespace-nowrap text-right font-bold tabular-nums text-slate-100">` +
     `<span class="pb-pocket__left">${esc(formatRand(pocket.balance))}</span>` +
-    ` <span class="pb-pocket__limit text-xs font-normal text-slate-400">/ ${esc(formatRand(pocket.limit))}</span></span>` +
-    barHtml(pct, status, locked ? null : pace, `${name} money left`, 'h-1.5') +
+    (carriedIn > 0
+      ? ''
+      : ` <span class="pb-pocket__limit text-xs font-normal text-slate-400">/ ${esc(formatRand(pocket.limit))}</span>`) +
+    `</span>` +
+    barHtml(seg.own, status, locked ? null : pace, `${name} money left`, 'h-1.5', seg.carried) +
     `</button>`
   );
 }
@@ -218,7 +263,7 @@ export function summaryHtml(summary, pockets, pace = null) {
   if (!Number.isFinite(balance) || !Number.isFinite(limit) || limit <= 0) return '';
 
   const pct = Math.max(0, Math.min(100, (balance / limit) * 100));
-  const attention = list.filter((p) => pocketStatus(p, pace) !== 'ok').length;
+  const attention = list.filter((p) => !isSavings(p) && pocketStatus(p, pace) !== 'ok').length;
 
   const needs = attention === 0
     ? 'All pockets on track'
@@ -228,13 +273,16 @@ export function summaryHtml(summary, pockets, pace = null) {
     ? `<strong class="font-semibold text-slate-100">${ahead ? 'Spending ahead of pace' : 'On pace'}.</strong> ${esc(needs)}`
     : `<strong class="font-semibold text-slate-100">${esc(needs)}</strong>`;
 
+  const carriedTotal = num(s.totalCarriedIn);
+  const carriedNote = carriedTotal > 0 ? ` · includes ${esc(formatRand(carriedTotal))} carried in` : '';
+
   return (
     `<div class="pb-sum flex items-center gap-4">` +
     ringHtml(pct, pace) +
     `<div class="min-w-0">` +
     `<p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Left this month</p>` +
     `<p class="pb-sum__left text-3xl font-extrabold tabular-nums text-slate-100">${esc(formatRand(balance))}</p>` +
-    `<p class="pb-sum__of text-xs tabular-nums text-slate-400">of ${esc(formatRand(limit))}</p>` +
+    `<p class="pb-sum__of text-xs tabular-nums text-slate-400">of ${esc(formatRand(limit))}${carriedNote}</p>` +
     `<p class="pb-sum__verdict mt-0.5 text-xs text-slate-400">${verdict}</p>` +
     `</div></div>`
   );
@@ -318,6 +366,178 @@ export function renderSummary(container, summary, pockets, pace = null) {
   mount(container, summaryHtml(summary, pockets, pace));
 }
 
+const FULL_MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+  'August', 'September', 'October', 'November', 'December'];
+
+/** "2026-10" -> "October"; anything unreadable -> ''. */
+function monthName(key) {
+  const m = /^\d{4}-(\d{2})$/.exec(String(key ?? ''));
+  return m ? FULL_MONTH_NAMES[Number(m[1]) - 1] || '' : '';
+}
+
+/**
+ * The "<Month> wrapped up" card on Home: what happened to last month's
+ * leftovers. Empty string when there is no month-end to show. At most five
+ * lines; every value is escaped.
+ */
+export function monthEndCardHtml(monthEnd) {
+  if (!monthEnd || typeof monthEnd !== 'object') return '';
+  const items = Array.isArray(monthEnd.items) ? monthEnd.items : [];
+  const totals = monthEnd.totals || {};
+  const title = `${monthName(monthEnd.fromMonth)} wrapped up`.trim();
+  const count = items.length;
+  const summary = `${formatRand(totals.all)} left over in ${count} ${count === 1 ? 'pocket' : 'pockets'}. Here's where it went.`;
+  const lines = items.slice(0, 5).map((it) => {
+    const item = it || {};
+    let dest;
+    if (item.type === 'sweep') dest = `<span class="pb-monthend__dest">\u2192 ${esc(item.toName)}</span>`;
+    else if (item.type === 'forfeit') dest = '<span class="pb-monthend__dest pb-monthend__dest--reset">\u2192 reset</span>';
+    else dest = '<span class="pb-monthend__dest">\u2192 carried</span>';
+    return `<span class="pb-monthend__name">${esc(item.name)}</span>` +
+      `<span class="pb-monthend__val"><strong>${esc(formatRand(item.amount))}</strong> ${dest}</span>`;
+  }).join('');
+  return (
+    `<section class="pb-monthend" aria-labelledby="month-end-title">` +
+    `<div class="pb-monthend__head"><div>` +
+    `<h2 id="month-end-title" class="pb-monthend__title">${esc(title)}</h2>` +
+    `<p class="pb-monthend__sub">${esc(summary)}</p></div>` +
+    `<button type="button" class="pb-monthend__x" data-action="monthend-dismiss" aria-label="Dismiss">\u2715</button></div>` +
+    `<div class="pb-monthend__lines">${lines}</div>` +
+    `<div class="pb-monthend__actions">` +
+    `<button type="button" class="pb-monthend__btn" data-action="monthend-review">Review &amp; change</button>` +
+    `<button type="button" class="pb-monthend__btn pb-monthend__btn--ok" data-action="monthend-dismiss">Looks good</button>` +
+    `</div></section>`
+  );
+}
+
+/** Paint the month-end card into its container (empty when null). */
+export function renderMonthEnd(container, monthEnd) {
+  mount(container, monthEndCardHtml(monthEnd));
+}
+
+/** "2026-10" -> "November": the month after the one in `key`; anything unreadable -> ''. */
+function nextMonthName(key) {
+  const m = /^\d{4}-(\d{2})$/.exec(String(key ?? ''));
+  return m ? FULL_MONTH_NAMES[Number(m[1]) % 12] || '' : '';
+}
+
+/** "A", "A and B", "A, B and C". */
+function joinNames(names) {
+  if (names.length <= 1) return names.join('');
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/**
+ * The banner offering to switch every Reset pocket to carry over. Empty string
+ * when no active, non-Savings pocket still resets.
+ */
+export function resetBannerHtml(pockets) {
+  const names = (Array.isArray(pockets) ? pockets : [])
+    .filter((p) => p && p.kind !== 'Savings' && p.status !== 'Archived' && p.archived !== true && (p.rule || 'Reset') === 'Reset')
+    .map((p) => esc(p.name));
+  if (names.length === 0) return '';
+  return (
+    `<div class="pb-merev__banner">` +
+    `<p class="pb-merev__bannertext"><strong>${joinNames(names)}</strong> still reset at month end.</p>` +
+    `<button type="button" class="pb-merev__btn pb-merev__btn--warn" data-action="monthend-switch">Switch to carry over</button>` +
+    `</div>`
+  );
+}
+
+function reviewRowHtml(item, intoMonth) {
+  const it = item || {};
+  let where;
+  let moveId = '';
+  if (it.type === 'sweep') {
+    where = `Swept to ${esc(it.toName)}`;
+    moveId = it.toPocketId;
+  } else if (it.type === 'forfeit') {
+    where = '<span class="pb-merev__lost">Lost at reset</span>';
+  } else {
+    where = `Carried into ${esc(intoMonth)}`;
+    moveId = it.pocketId;
+  }
+  const button = moveId
+    ? `<button type="button" class="pb-merev__btn" data-action="monthend-move" data-pocket-id="${esc(moveId)}">Move\u2026</button>`
+    : '<span></span>';
+  return (
+    `<div class="pb-merev__row">` +
+    `<span class="pb-merev__name">${esc(it.name)}</span>` +
+    `<span class="pb-merev__amt">${esc(formatRand(it.amount))}</span>` +
+    `<span class="pb-merev__where">${where}</span>${button}</div>`
+  );
+}
+
+/**
+ * The month-end review screen as three pieces of escaped HTML: the reset
+ * `banner`, one `list` row per item, and the `totals` strip.
+ */
+export function monthEndReviewHtml(monthEnd, pockets) {
+  const data = monthEnd && typeof monthEnd === 'object' ? monthEnd : {};
+  const items = Array.isArray(data.items) ? data.items : [];
+  const totals = data.totals || {};
+  const intoMonth = nextMonthName(data.fromMonth);
+  const cell = (label, value, mod) =>
+    `<div class="pb-merev__total"><p class="pb-merev__label">${label}</p>` +
+    `<p class="pb-merev__value${mod}">${esc(formatRand(value))}</p></div>`;
+  return {
+    banner: resetBannerHtml(pockets),
+    list: items.map((it) => reviewRowHtml(it, intoMonth)).join(''),
+    totals: cell('Carried', totals.carried, ' pb-merev__value--carry') +
+      cell('To Savings', totals.swept, '') +
+      cell('Reset', totals.forfeited, ' pb-merev__value--reset'),
+  };
+}
+
+/** Paint the month-end review screen into its three containers. */
+export function renderMonthEndReview(containers, monthEnd, pockets) {
+  const html = monthEndReviewHtml(monthEnd, pockets);
+  const c = containers || {};
+  mount(c.banner, html.banner);
+  mount(c.list, html.list);
+  mount(c.totals, html.totals);
+}
+
+/**
+ * One Savings row: name, balance, a carry pill if any, and a line saying where
+ * the money comes from. Savings has no limit, so it is never depleted or locked,
+ * even at R0; the row is always a tappable "add an expense here" target.
+ */
+export function savingsRowHtml(p, opts = {}) {
+  const pocket = p || {};
+  const name = String(pocket.name ?? '');
+  const carryText = carryPillText(pocket, opts && opts.month);
+  return (
+    `<button type="button" class="pb-pocket pb-savings grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2` +
+    ` border-b border-slate-800 py-3 text-left"` +
+    ` data-action="select-pocket" data-pocket-id="${esc(pocket.id)}" data-status="ok"` +
+    ` aria-label="${esc(`Add expense to ${name}, ${formatMoney(pocket.balance)} saved`)}">` +
+    `<span class="flex min-w-0 items-center gap-2">` +
+    `<span class="pb-pocket__name truncate text-[15px] font-semibold text-slate-100">${esc(name)}</span>` +
+    `${carryPill(carryText)}</span>` +
+    `<span class="pb-pocket__amount whitespace-nowrap text-right font-bold tabular-nums text-slate-100">` +
+    `<span class="pb-pocket__left">${esc(formatRand(pocket.balance))}</span></span>` +
+    `<span class="pb-savings__note col-span-2 text-xs text-slate-400">No monthly limit · fed by leftovers and transfers</span>` +
+    `</button>`
+  );
+}
+
+/**
+ * The Savings section: one row per Savings pocket. With none, the container
+ * (and `opts.heading`, the section's title) is hidden and emptied.
+ */
+export function renderSavings(container, pockets, opts = {}) {
+  const list = (Array.isArray(pockets) ? pockets : []).filter(isSavings);
+  const heading = opts && opts.heading;
+  for (const el of [container, heading]) {
+    if (el && el.classList) el.classList.toggle('hidden', list.length === 0);
+  }
+  mount(container, list.length === 0
+    ? ''
+    : `<div class="pb-list flex flex-col">` +
+      list.map((p) => savingsRowHtml(p, { month: opts && opts.month })).join('') + `</div>`);
+}
+
 /** Only worth the screen space once the list is long enough to scan. */
 const CHIPS_FROM = 6;
 
@@ -357,7 +577,7 @@ function inFilter(p, filter, pace) {
  * Returns the filter that was actually applied.
  */
 export function renderPockets(container, pockets, opts = {}) {
-  const list = Array.isArray(pockets) ? pockets : [];
+  const list = (Array.isArray(pockets) ? pockets : []).filter((p) => !isSavings(p));
   const pace = (opts && opts.pace) || null;
   if (list.length === 0) {
     mount(container, `<p class="pb-empty px-4 py-8 text-center text-sm text-slate-500">` +
@@ -390,10 +610,16 @@ export function renderPockets(container, pockets, opts = {}) {
 
   const shown = list.filter((p) => inFilter(p, filter, pace));
   const body = shown.length > 0
-    ? shown.map((p) => pocketRowHtml(p, pace)).join('')
+    ? shown.map((p) => pocketRowHtml(p, pace, { month: opts && opts.month })).join('')
     : `<p class="pb-empty px-4 py-8 text-center text-sm text-slate-500">Nothing needs attention.</p>`;
 
-  mount(container, chips + `<div class="pb-list flex flex-col">` + body + `</div>`);
+  const legend = list.some((p) => num(p && p.carriedIn) > 0)
+    ? `<p class="pb-legend mt-2 text-xs text-slate-400">` +
+      `<span class="pb-legend__item"><span class="pb-legend__swatch" style="background: #10b981"></span>This month's budget</span>` +
+      `<span class="pb-legend__item"><span class="pb-legend__swatch pb-carry"></span>Carried in</span></p>`
+    : '';
+
+  mount(container, chips + `<div class="pb-list flex flex-col">` + body + `</div>` + legend);
   return filter;
 }
 

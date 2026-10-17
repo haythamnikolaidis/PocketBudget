@@ -3,14 +3,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTransaction, createPocket, getState, handleRequest } from '../backend/05_Api.gs.js';
 import { installGlobals, createProps } from './helpers/appsScriptGlobals.js';
+import { createSheet } from './helpers/fakeSheet.js';
 import { freshWorkbook, SAMPLE_POCKETS, SAMPLE_TXNS } from './helpers/fixtures.js';
 
 const TOKEN = 'test-token';
 
-function withApi(pocketRows = SAMPLE_POCKETS, txnRows = SAMPLE_TXNS) {
+function withApi(pocketRows = SAMPLE_POCKETS, txnRows = SAMPLE_TXNS, adjSheet = null) {
   const wb = freshWorkbook(pocketRows, txnRows);
   const ss = {
-    getSheetByName: (n) => (n === 'Pockets' ? wb.pockets : n === 'Transactions' ? wb.txns : n === 'Monthly_Report' ? wb.report : null),
+    getSheetByName: (n) => (n === 'Pockets' ? wb.pockets : n === 'Transactions' ? wb.txns : n === 'Monthly_Report' ? wb.report : n === 'Adjustments' ? adjSheet : null),
   };
   const props = createProps({ API_TOKEN: TOKEN });
   const lock = { _held: false, tryLock() { this._held = true; return true; }, releaseLock() { this._held = false; } };
@@ -203,5 +204,69 @@ test('handleRequest never throws — it returns an error envelope', () => {
   const r = handleRequest({ action: 'getState', params: { token: TOKEN } });
   assert.equal(r.ok, true);
   assert.equal(typeof r.version, 'string');
+  restore();
+});
+
+const ADJ_HEADER = [
+  'Adj ID', 'Timestamp', 'User', 'Month', 'Type', 'From Pocket', 'To Pocket',
+  'Amount', 'Note', 'Request ID', 'Account ID',
+];
+
+test('getState returns an empty adjustments list when the sheet is missing', () => {
+  const { restore } = withApi();
+  const s = getState({ token: TOKEN, month: '2026-10' });
+  assert.deepEqual(s.adjustments, []);
+  restore();
+});
+
+test('getState returns only this month\'s adjustments, newest first', () => {
+  const adj = createSheet('Adjustments', [
+    ADJ_HEADER,
+    ['A1001', new Date('2026-09-20T10:00:00Z'), 'Sam', '2026-09', 'transfer', 'P01', 'P02', 5, '', 'r1', ''],
+    ['A1002', new Date('2026-10-02T10:00:00Z'), 'Sam', '2026-10', 'transfer', 'P01', 'P02', 10, '', 'r2', ''],
+    ['A1003', new Date('2026-10-09T10:00:00Z'), 'Alex', '2026-10', 'transfer', 'P02', 'P01', 20, '', 'r3', ''],
+  ]);
+  const { restore } = withApi(SAMPLE_POCKETS, SAMPLE_TXNS, adj);
+  const s = getState({ token: TOKEN, month: '2026-10' });
+  assert.deepEqual(s.adjustments.map((a) => a.id), ['A1003', 'A1002']);
+  restore();
+});
+
+const V2_POCKETS = [
+  ['P01', 'Groceries', 'Chase Checking', 800, 340.5, 'Active', 'Carry', '', 100, 'Spend'],
+  ['P02', 'Dining Out', 'Credit Card A', 250, 15, 'Active'],
+  ['P03', 'Savings', '', 0, 500, 'Active', 'Carry', '', 200, 'Savings'],
+];
+
+test('getState pockets carry the v2 fields with defaults for 6-column rows', () => {
+  const { restore } = withApi(V2_POCKETS, SAMPLE_TXNS);
+  const s = getState({ token: TOKEN, month: '2026-10' });
+  const [p1, p2] = s.pockets;
+  assert.equal(p1.rule, 'Carry');
+  assert.equal(p1.carriedIn, 100);
+  assert.equal(p1.kind, 'Spend');
+  assert.equal(p1.available, 900);
+  assert.equal(p2.rule, 'Reset');
+  assert.equal(p2.sweepTo, '');
+  assert.equal(p2.carriedIn, 0);
+  assert.equal(p2.kind, 'Spend');
+  assert.equal(p2.available, 250);
+  restore();
+});
+
+test('getState pctUsed is measured against available', () => {
+  const { restore } = withApi(V2_POCKETS, SAMPLE_TXNS);
+  const s = getState({ token: TOKEN, month: '2026-10' });
+  assert.equal(s.pockets[0].pctUsed, 7.24);   // 65.2 / 900
+  restore();
+});
+
+test('getState summary leaves out Savings pockets and totals carried in', () => {
+  const { restore } = withApi(V2_POCKETS, SAMPLE_TXNS);
+  const s = getState({ token: TOKEN, month: '2026-10' });
+  assert.equal(s.pockets.length, 3);
+  assert.equal(s.summary.totalLimit, 1050);
+  assert.equal(s.summary.totalBalance, 355.5);
+  assert.equal(s.summary.totalCarriedIn, 100);
   restore();
 });

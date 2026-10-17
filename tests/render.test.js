@@ -8,6 +8,8 @@ import assert from 'node:assert/strict';
 
 import {
   esc,
+  barSegments,
+  carryPillText,
   pocketRowHtml,
   pocketStatus,
   summaryHtml,
@@ -15,7 +17,11 @@ import {
   renderSummary,
   activityRowHtml,
   renderPockets,
+  renderSavings,
   renderActivity,
+  monthEndCardHtml,
+  monthEndReviewHtml,
+  resetBannerHtml,
 } from '../app/js/render.js';
 
 /* ------------------------------------------------------------- fixtures -- */
@@ -619,4 +625,249 @@ test('activityRowHtml uses light text for the note, meta and amount (the page is
   assert.match(html, /pb-row__meta[^"]*text-slate-400/);
   assert.match(html, /pb-row__amount[^"]*text-slate-100/);
   assert.doesNotMatch(html, /pb-row__(note|meta|amount)[^"]*text-slate-(500|600|700|800|900)/);
+});
+
+/* ------------------------------------------------- carried-in bar and pills -- */
+
+const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} !== ${b}`);
+
+test('barSegments without carry is all this month, as a share of the limit', () => {
+  const s = barSegments({ limit: 1000, available: 1000, balance: 250, carriedIn: 0 });
+  near(s.own, 25);
+  assert.equal(s.carried, 0);
+});
+
+test('barSegments falls back to the limit when available is missing', () => {
+  near(barSegments({ limit: 800, balance: 400 }).own, 50);
+});
+
+test('barSegments with carry and nothing spent splits limit and carried', () => {
+  const s = barSegments({ limit: 1000, available: 1200, balance: 1200, carriedIn: 200 });
+  near(s.own, (1000 / 1200) * 100);
+  near(s.carried, (200 / 1200) * 100);
+});
+
+test('barSegments with carry and partly spent takes the spending from this month first', () => {
+  const s = barSegments({ limit: 1000, available: 1200, balance: 600, carriedIn: 200 });
+  near(s.own, (400 / 1200) * 100);
+  near(s.carried, (200 / 1200) * 100);
+});
+
+test('barSegments shrinks the carried part once the balance is below it', () => {
+  const s = barSegments({ limit: 1000, available: 1200, balance: 120, carriedIn: 200 });
+  assert.equal(s.own, 0);
+  near(s.carried, 10);
+});
+
+test('barSegments never adds up to more than 100 when the balance exceeds available', () => {
+  const s = barSegments({ limit: 1000, available: 1200, balance: 5000, carriedIn: 200 });
+  assert.ok(s.own + s.carried <= 100 + 1e-9);
+});
+
+test('carryPillText names the month before, across a year boundary', () => {
+  assert.equal(carryPillText({ carriedIn: 120 }, '2026-11'), '+R120 from Oct');
+  assert.equal(carryPillText({ carriedIn: 120 }, '2027-01'), '+R120 from Dec');
+});
+
+test('carryPillText is empty when nothing was carried in', () => {
+  assert.equal(carryPillText({ carriedIn: 0 }, '2026-11'), '');
+  assert.equal(carryPillText({}, '2026-11'), '');
+});
+
+test('pocketRowHtml shows the carry pill, a carried segment and no limit when money was carried in', () => {
+  const html = pocketRowHtml({ ...POCKET, limit: 1000, available: 1120, balance: 1120, carriedIn: 120, rule: 'Carry' },
+    null, { month: '2026-11' });
+  assert.match(html, /\+R120 from Oct/);
+  assert.match(html, /pb-carry /);
+  assert.doesNotMatch(html, /pb-pocket__limit/);
+  assert.doesNotMatch(html, /pb-pocket__reset/);
+});
+
+test('pocketRowHtml shows a Reset pill and the limit for a Reset pocket', () => {
+  const html = pocketRowHtml({ ...POCKET, rule: 'Reset', carriedIn: 0 }, null, { month: '2026-11' });
+  assert.match(html, /pb-pocket__reset[^>]*>Reset</);
+  assert.match(html, /pb-pocket__limit/);
+  assert.doesNotMatch(html, /pb-carry/);
+});
+
+test('renderPockets shows the legend only when some pocket has carried-in money', async () => {
+  await withFakeDom(async (container) => {
+    renderPockets(container, [POCKET], { month: '2026-11' });
+    assert.doesNotMatch(container.templateInner, /Carried in/);
+    renderPockets(container, [{ ...POCKET, carriedIn: 50, available: 850 }], { month: '2026-11' });
+    assert.match(container.templateInner, /This month's budget/);
+    assert.match(container.templateInner, /Carried in/);
+  });
+});
+
+/* -------------------------------------------------------------- savings -- */
+
+const SAVINGS = {
+  id: 'P09', name: 'Savings', account: 'Joint', kind: 'Savings',
+  limit: 0, balance: 0, spent: 0, pctUsed: 0, isLocked: true, carriedIn: 0,
+};
+
+test('renderPockets leaves Savings pockets out of the main list', async () => {
+  await withFakeDom(async (container) => {
+    renderPockets(container, [POCKET, SAVINGS]);
+    const html = container.templateInner;
+    assert.ok(html.includes('data-pocket-id="P01"'));
+    assert.ok(!html.includes('data-pocket-id="P09"'));
+  });
+});
+
+test('renderSavings renders a Savings pocket at R0 without the depleted or locked style', async () => {
+  await withFakeDom(async (container) => {
+    renderSavings(container, [POCKET, SAVINGS]);
+    const html = container.templateInner;
+    assert.ok(html.includes('data-pocket-id="P09"'));
+    assert.ok(!html.includes('data-pocket-id="P01"'));
+    assert.ok(html.includes('data-action="select-pocket"'));
+    assert.ok(html.includes('No monthly limit · fed by leftovers and transfers'));
+    assert.doesNotMatch(html, /Depleted|disabled|data-status="out"/);
+  });
+});
+
+test('renderSavings shows the balance and a carry pill', async () => {
+  await withFakeDom(async (container) => {
+    renderSavings(container, [{ ...SAVINGS, balance: 1200, carriedIn: 300 }], { month: '2026-11' });
+    const html = container.templateInner;
+    assert.ok(html.includes('R1,200'));
+    assert.ok(html.includes('+R300 from Oct'));
+  });
+});
+
+test('summaryHtml adds the carried-in note only when something was carried in', () => {
+  const base = { totalBalance: 500, totalLimit: 1000 };
+  assert.ok(summaryHtml({ ...base, totalCarriedIn: 3980 }, [], null).includes('of R1,000 · includes R3,980 carried in'));
+  assert.ok(!summaryHtml({ ...base, totalCarriedIn: 0 }, [], null).includes('carried in'));
+  assert.ok(!summaryHtml(base, [], null).includes('carried in'));
+});
+
+/* ------------------------------------------------------- month-end card -- */
+
+const MONTH_END = {
+  fromMonth: '2026-10',
+  items: [
+    { pocketId: 'P01', name: 'Car Service', type: 'carry', amount: 3000 },
+    { pocketId: 'P02', name: 'Dining Out', type: 'sweep', amount: 45, toPocketId: 'P09', toName: 'Savings' },
+    { pocketId: 'P03', name: 'Petrol', type: 'forfeit', amount: 30 },
+  ],
+  totals: { carried: 3000, swept: 45, forfeited: 30, all: 3075 },
+};
+
+test('monthEndCardHtml: nothing for null', () => {
+  assert.equal(monthEndCardHtml(null), '');
+});
+
+test('monthEndCardHtml: title, summary and buttons', () => {
+  const html = monthEndCardHtml(MONTH_END);
+  assert.match(html, /October wrapped up/);
+  assert.match(html, /R3,075 left over in 3 pockets\. Here&#39;s where it went\./);
+  assert.match(html, /data-action="monthend-review"[^>]*>Review &amp; change/);
+  assert.match(html, /data-action="monthend-dismiss"[^>]*>Looks good/);
+  assert.match(html, /data-action="monthend-dismiss" aria-label="Dismiss"/);
+});
+
+test('monthEndCardHtml: a line per type', () => {
+  const html = monthEndCardHtml(MONTH_END);
+  assert.match(html, /Car Service[\s\S]*R3,000<\/strong> <span class="pb-monthend__dest">\u2192 carried/);
+  assert.match(html, /Dining Out[\s\S]*R45<\/strong> <span class="pb-monthend__dest">\u2192 Savings/);
+  assert.match(html, /Petrol[\s\S]*pb-monthend__dest--reset">\u2192 reset/);
+});
+
+test('monthEndCardHtml: at most 5 lines', () => {
+  const items = Array.from({ length: 8 }, (_, i) => ({ name: `Pocket${i}`, type: 'carry', amount: 10 }));
+  const html = monthEndCardHtml({ fromMonth: '2026-01', items, totals: { all: 80 } });
+  assert.equal((html.match(/pb-monthend__name/g) || []).length, 5);
+  assert.match(html, /January wrapped up/);
+});
+
+test('monthEndCardHtml: escapes names', () => {
+  const html = monthEndCardHtml({
+    fromMonth: '2026-10',
+    items: [{ name: '<img src=x>', type: 'sweep', amount: 5, toName: '"><b>' }],
+    totals: { all: 5 },
+  });
+  assert.ok(!html.includes('<img'));
+  assert.ok(!html.includes('<b>'));
+  assert.match(html, /&lt;img src=x&gt;/);
+});
+
+/* ------------------------------------------------- month-end review -- */
+
+const REVIEW = {
+  fromMonth: '2026-10',
+  items: [
+    { pocketId: 'P01', name: 'Car Service', type: 'carry', amount: 3000, toPocketId: '', toName: '' },
+    { pocketId: 'P02', name: 'Dining Out', type: 'sweep', amount: 45, toPocketId: 'P09', toName: 'Savings' },
+    { pocketId: 'P03', name: 'Petrol', type: 'forfeit', amount: 30, toPocketId: '', toName: '' },
+  ],
+  totals: { carried: 3000, swept: 45, forfeited: 30, all: 3075 },
+};
+
+const REVIEW_POCKETS = [
+  { id: 'P01', name: 'Car Service', kind: 'Spend', rule: 'Carry' },
+  { id: 'P03', name: 'Petrol', kind: 'Spend', rule: 'Reset' },
+  { id: 'P04', name: 'Kids', kind: 'Spend', rule: 'Reset' },
+  { id: 'P09', name: 'Savings', kind: 'Savings', rule: 'Reset' },
+];
+
+test('monthEndReviewHtml: one row per item with the right wording', () => {
+  const { list } = monthEndReviewHtml(REVIEW, REVIEW_POCKETS);
+  assert.equal((list.match(/pb-merev__row/g) || []).length, 3);
+  assert.match(list, /Car Service[\s\S]*R3,000[\s\S]*Carried into November/);
+  assert.match(list, /Dining Out[\s\S]*R45[\s\S]*Swept to Savings/);
+  assert.match(list, /Petrol[\s\S]*R30[\s\S]*Lost at reset/);
+});
+
+test('monthEndReviewHtml: Move buttons target the pocket now holding the money', () => {
+  const { list } = monthEndReviewHtml(REVIEW, REVIEW_POCKETS);
+  const buttons = list.match(/data-action="monthend-move" data-pocket-id="[^"]*"/g) || [];
+  assert.deepEqual(buttons, [
+    'data-action="monthend-move" data-pocket-id="P01"',
+    'data-action="monthend-move" data-pocket-id="P09"',
+  ]);
+});
+
+test('monthEndReviewHtml: totals for carried, savings and reset', () => {
+  const { totals } = monthEndReviewHtml(REVIEW, REVIEW_POCKETS);
+  assert.match(totals, /Carried[\s\S]*R3,000/);
+  assert.match(totals, /To Savings[\s\S]*R45/);
+  assert.match(totals, /Reset[\s\S]*R30/);
+});
+
+test('monthEndReviewHtml: December rolls into January and names are escaped', () => {
+  const { list } = monthEndReviewHtml({
+    fromMonth: '2026-12',
+    items: [{ pocketId: 'P1', name: '<img src=x>', type: 'carry', amount: 5 }],
+    totals: {},
+  }, []);
+  assert.match(list, /Carried into January/);
+  assert.ok(!list.includes('<img'));
+  assert.match(list, /&lt;img src=x&gt;/);
+});
+
+test('monthEndReviewHtml: nothing to show for null', () => {
+  const html = monthEndReviewHtml(null, []);
+  assert.equal(html.list, '');
+  assert.equal(html.banner, '');
+});
+
+test('resetBannerHtml: names the Reset pockets, skips Savings and Archived', () => {
+  const html = resetBannerHtml([
+    ...REVIEW_POCKETS,
+    { id: 'P05', name: 'Old', kind: 'Spend', rule: 'Reset', status: 'Archived' },
+  ]);
+  assert.match(html, /<strong>Petrol and Kids<\/strong> still reset at month end\./);
+  assert.match(html, /data-action="monthend-switch"[^>]*>Switch to carry over/);
+  assert.ok(!html.includes('Old'));
+});
+
+test('resetBannerHtml: empty when nothing resets, and blank rule counts as Reset', () => {
+  assert.equal(resetBannerHtml([{ id: 'P01', name: 'A', kind: 'Spend', rule: 'Carry' }]), '');
+  assert.equal(resetBannerHtml([]), '');
+  assert.match(resetBannerHtml([{ id: 'P01', name: 'A', kind: 'Spend', rule: '' }]), /<strong>A<\/strong>/);
+  assert.match(resetBannerHtml([{ name: 'A', rule: 'Reset' }, { name: 'B', rule: 'Reset' }, { name: 'C', rule: 'Reset' }]), /A, B and C/);
+  assert.match(resetBannerHtml([{ name: '<b>', rule: 'Reset' }]), /&lt;b&gt;/);
 });

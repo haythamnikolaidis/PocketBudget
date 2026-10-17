@@ -136,5 +136,7 @@ export function makeApi(config, { fetchImpl = fetch } = {}) {
     updatePocket: (p) => call('updatePocket', p),
     createTransaction: (t) => call('createTransaction', t),
     deleteTransaction: (txnId) => call('deleteTransaction', { txnId }),
+    transferFunds: (p) => call('transferFunds', p),
+    getPocket: (pocketId, month) => call('getPocket', month ? { pocketId, month } : { pocketId }),
   };
 }

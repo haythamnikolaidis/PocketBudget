@@ -17,27 +17,27 @@ Type `HUMAN` = the agent stops there and a person deploys and checks the milesto
 | T07 | [Pocket defaults + v2 fields in `readPockets`](tasks/T07-pocket-v2-fields.md) | M1 | backend | done |
 | T08 | [M1 release prep](tasks/T08-m1-release.md) | M1 | docs | done |
 | T09 | [HUMAN: deploy and check M1](tasks/T09-m1-human.md) | M1 | HUMAN | done |
-| T10 | [Adjustments sheet reads and writes](tasks/T10-adjustments-io.md) | M2 | backend | todo |
-| T11 | [`transferFunds` API action](tasks/T11-transfer-api.md) | M2 | backend | todo |
-| T12 | [`getState` returns this month's adjustments](tasks/T12-getstate-adjustments.md) | M2 | backend | todo |
-| T13 | [Move money: pure logic module](tasks/T13-move-logic.md) | M2 | frontend | todo |
-| T14 | [Move money screen](tasks/T14-move-screen.md) | M2 | frontend | todo |
-| T15 | [Leftover rules in `applyRollover` (pure)](tasks/T15-rollover-rules-pure.md) | M2 | backend | todo |
-| T16 | [Write leftover results during rollover](tasks/T16-rollover-persist.md) | M2 | backend | todo |
-| T17 | [Pocket rule in `createPocket` / `updatePocket`](tasks/T17-pocket-rule-api.md) | M2 | backend | todo |
-| T18 | [`migrateV2` creates the Savings pocket](tasks/T18-savings-pocket.md) | M2 | backend | todo |
-| T19 | [Stop capping balances at the monthly limit](tasks/T19-remove-clamps.md) | M2 | backend+frontend | todo |
-| T20 | [v2 fields in the API pocket object and summary](tasks/T20-present-pocket-v2.md) | M2 | backend | todo |
-| T21 | [Leftover rule on the pocket form](tasks/T21-manage-rule-form.md) | M2 | frontend | todo |
-| T22 | [Show the rule in the pocket list and in edit mode](tasks/T22-manage-rule-list.md) | M2 | frontend | todo |
-| T23 | [Home: carried-in bar segment and pills](tasks/T23-home-bars.md) | M2 | frontend | todo |
-| T24 | [Home: Savings section and summary line](tasks/T24-home-savings.md) | M2 | frontend | todo |
-| T25 | [`getState.monthEnd`](tasks/T25-monthend-api.md) | M2 | backend | todo |
-| T26 | [Month-end card on Home](tasks/T26-monthend-card.md) | M2 | frontend | todo |
-| T27 | [Month-end review screen](tasks/T27-monthend-review.md) | M2 | frontend | todo |
-| T28 | [`getPocket` API action](tasks/T28-getpocket-api.md) | M2 | backend | todo |
-| T29 | [Pocket detail screen](tasks/T29-pocket-detail.md) | M2 | frontend | todo |
-| T30 | [M2 release prep](tasks/T30-m2-release.md) | M2 | docs | todo |
+| T10 | [Adjustments sheet reads and writes](tasks/T10-adjustments-io.md) | M2 | backend | done |
+| T11 | [`transferFunds` API action](tasks/T11-transfer-api.md) | M2 | backend | done |
+| T12 | [`getState` returns this month's adjustments](tasks/T12-getstate-adjustments.md) | M2 | backend | done |
+| T13 | [Move money: pure logic module](tasks/T13-move-logic.md) | M2 | frontend | done |
+| T14 | [Move money screen](tasks/T14-move-screen.md) | M2 | frontend | done |
+| T15 | [Leftover rules in `applyRollover` (pure)](tasks/T15-rollover-rules-pure.md) | M2 | backend | done |
+| T16 | [Write leftover results during rollover](tasks/T16-rollover-persist.md) | M2 | backend | done |
+| T17 | [Pocket rule in `createPocket` / `updatePocket`](tasks/T17-pocket-rule-api.md) | M2 | backend | done |
+| T18 | [`migrateV2` creates the Savings pocket](tasks/T18-savings-pocket.md) | M2 | backend | done |
+| T19 | [Stop capping balances at the monthly limit](tasks/T19-remove-clamps.md) | M2 | backend+frontend | done |
+| T20 | [v2 fields in the API pocket object and summary](tasks/T20-present-pocket-v2.md) | M2 | backend | done |
+| T21 | [Leftover rule on the pocket form](tasks/T21-manage-rule-form.md) | M2 | frontend | done |
+| T22 | [Show the rule in the pocket list and in edit mode](tasks/T22-manage-rule-list.md) | M2 | frontend | done |
+| T23 | [Home: carried-in bar segment and pills](tasks/T23-home-bars.md) | M2 | frontend | done |
+| T24 | [Home: Savings section and summary line](tasks/T24-home-savings.md) | M2 | frontend | done |
+| T25 | [`getState.monthEnd`](tasks/T25-monthend-api.md) | M2 | backend | done |
+| T26 | [Month-end card on Home](tasks/T26-monthend-card.md) | M2 | frontend | done |
+| T27 | [Month-end review screen](tasks/T27-monthend-review.md) | M2 | frontend | done |
+| T28 | [`getPocket` API action](tasks/T28-getpocket-api.md) | M2 | backend | done |
+| T29 | [Pocket detail screen](tasks/T29-pocket-detail.md) | M2 | frontend | done |
+| T30 | [M2 release prep](tasks/T30-m2-release.md) | M2 | docs | done |
 | T31 | [HUMAN: deploy and check M2](tasks/T31-m2-human.md) | M2 | HUMAN | todo |
 | T32 | [Add form remembers each person's last pocket](tasks/T32-remember-pocket.md) | M3 | frontend | todo |
 | T33 | [`txnCount` on each pocket](tasks/T33-txn-count.md) | M3 | backend | todo |

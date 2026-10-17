@@ -86,8 +86,8 @@ expenses without complex software.
 - **Strict Non-Negative Enforcement:**
   - If `Amount > Current Balance`, the app blocks the submission with an alert:
     *"Insufficient funds in [Pocket Name]. Remaining: R[Balance]"*.
-- **Monthly Rollover:** Automatic script trigger on the 1st of each month to reset balances back
-  to full limit.
+- **Monthly Rollover:** Automatic script trigger on the 1st of each month. It applies each pocket's
+  leftover rule (Carry by default for new pockets, Sweep to another pocket, or Reset).
 
 ### B. Expense Entry (Mobile Optimized)
 
@@ -146,5 +146,6 @@ The build is done when all of the following are true and demonstrable:
    alert text from §4A, and no balance is mutated.
 4. Two devices logging expenses at the same moment can never drive a balance negative.
 5. Both spouses see the same pocket balances and activity feed within one refresh.
-6. The 1st-of-month rollover restores every active pocket to its full monthly limit.
+6. The rollover gives every active pocket its limit plus whatever its leftover rule carries in, and
+   never forgives spending already recorded in the new month.
 7. The `Monthly_Report` sheet renders budget-vs-actual, spouse split, and a run-rate flag.

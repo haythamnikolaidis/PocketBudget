@@ -45,13 +45,13 @@ export function toCents(v) {
  * -> balance 700. Raising the limit of a depleted pocket therefore gives it money
  * (the old rule only clamped, so it gave nothing and the UI's own advice to
  * "raise its limit" did not work). Lowering is symmetric, so raising and then
- * lowering a limit cannot create money. Never below 0, never above the new limit.
+ * lowering a limit cannot create money. Never below 0; a balance carried over from earlier months may exceed the limit.
  */
 export function balanceAfterLimitChange(balance, oldLimit, newLimit) {
   const bal = Math.round(Number(balance) * 100);
   const oldC = Math.round(Number(oldLimit) * 100);
   const newC = Math.round(Number(newLimit) * 100);
-  return Math.max(0, Math.min(newC, bal + (newC - oldC))) / 100;
+  return Math.max(0, bal + (newC - oldC)) / 100;
 }
 
 export function toDollars(cents) {
@@ -154,6 +154,16 @@ export function nextTransactionId(existingIds, lastIssued = 0) {
   // The brief's examples start at T1001, so the sequence starts there and pads to 4 digits.
   const start = 1000;
   return 'T' + String(Math.max(max + 1, start + 1)).padStart(4, '0');
+}
+
+/** Same as `nextTransactionId`, for the Adjustments sheet: A1001, A1002, ... */
+export function nextAdjustmentId(existingIds, lastIssued = 0) {
+  const max = existingIds.reduce((m, id) => {
+    if (typeof id !== 'string' || !/^A\d+$/.test(id)) return m;
+    const n = parseInt(id.slice(1), 10);
+    return Number.isFinite(n) && n > m ? n : m;
+  }, Math.max(0, Number(lastIssued) || 0));
+  return 'A' + String(Math.max(max + 1, 1001)).padStart(4, '0');
 }
 
 /* --------------------------------------------------------------- envelope -- */

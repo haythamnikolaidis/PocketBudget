@@ -83,3 +83,108 @@ test('applyRollover resets active pockets to their limit and leaves others alone
   assert.equal(r.pockets.find((p) => p.id === 'P01').balance, 800);
   assert.equal(r.pockets.find((p) => p.id === 'P03').balance, 100);  // archived untouched
 });
+
+const pk = (id, over = {}) => ({
+  id, name: id, limit: 100, balance: 0, status: 'Active', rule: 'Reset', sweepTo: '', carriedIn: 0, kind: 'Spend', ...over,
+});
+const byId = (r, id) => r.pockets.find((p) => p.id === id);
+
+test('applyRollover Carry: balance is limit plus leftover, with a carry adjustment', () => {
+  const r = applyRollover([pk('P01', { rule: 'Carry', balance: 40 })], { fromMonthLabel: 'September 2026' });
+  assert.equal(byId(r, 'P01').balance, 140);
+  assert.equal(byId(r, 'P01').carriedIn, 40);
+  assert.deepEqual(r.adjustments, [{ type: 'carry', toPocketId: 'P01', amount: 40, note: 'Left over from September 2026' }]);
+});
+
+test('applyRollover Reset: balance is the limit, leftover is forfeited', () => {
+  const r = applyRollover([pk('P01', { rule: 'Reset', balance: 40, carriedIn: 10 })]);
+  assert.equal(byId(r, 'P01').balance, 100);
+  assert.equal(byId(r, 'P01').carriedIn, 0);
+  assert.deepEqual(r.adjustments, [{ type: 'forfeit', fromPocketId: 'P01', amount: 40, note: 'Left over' }]);
+});
+
+test('applyRollover treats a missing rule as Reset', () => {
+  const p = pk('P01', { balance: 30 });
+  delete p.rule;
+  const r = applyRollover([p]);
+  assert.equal(byId(r, 'P01').balance, 100);
+  assert.equal(r.adjustments[0].type, 'forfeit');
+});
+
+test('applyRollover Sweep moves the leftover into the target', () => {
+  const r = applyRollover([
+    pk('P01', { rule: 'Sweep', sweepTo: 'P09', balance: 25 }),
+    pk('P09', { rule: 'Carry', kind: 'Savings', limit: 0, balance: 500 }),
+  ], { fromMonthLabel: 'September 2026' });
+  assert.equal(byId(r, 'P01').balance, 100);
+  assert.equal(byId(r, 'P01').carriedIn, 0);
+  assert.equal(byId(r, 'P09').balance, 525);
+  assert.deepEqual(r.adjustments.find((a) => a.type === 'sweep'),
+    { type: 'sweep', fromPocketId: 'P01', toPocketId: 'P09', amount: 25, note: 'Left over from September 2026' });
+});
+
+test('applyRollover: two pockets sweeping into Savings', () => {
+  const r = applyRollover([
+    pk('P01', { rule: 'Sweep', sweepTo: 'P09', balance: 25 }),
+    pk('P02', { rule: 'Sweep', sweepTo: 'P09', balance: 15.5 }),
+    pk('P09', { rule: 'Carry', kind: 'Savings', limit: 0, balance: 100 }),
+  ]);
+  assert.equal(byId(r, 'P09').balance, 140.5);
+  assert.equal(byId(r, 'P09').carriedIn, 100);
+  assert.equal(r.adjustments.filter((a) => a.type === 'sweep').length, 2);
+});
+
+test('applyRollover: a broken sweep target behaves as Carry', () => {
+  const r = applyRollover([
+    pk('P01', { rule: 'Sweep', sweepTo: 'P99', balance: 20 }),
+    pk('P02', { rule: 'Sweep', sweepTo: 'P02', balance: 30 }),
+    pk('P03', { rule: 'Sweep', sweepTo: 'P04', balance: 40 }),
+    pk('P04', { status: 'Archived' }),
+    pk('P05', { rule: 'Sweep', sweepTo: '', balance: 50 }),
+  ]);
+  assert.equal(byId(r, 'P01').balance, 120);
+  assert.equal(byId(r, 'P02').balance, 130);
+  assert.equal(byId(r, 'P03').balance, 140);
+  assert.equal(byId(r, 'P05').balance, 150);
+  assert.equal(byId(r, 'P01').carriedIn, 20);
+  assert.deepEqual(r.adjustments.map((a) => a.type), ['carry', 'carry', 'carry', 'carry']);
+});
+
+test('applyRollover: nothing left over means no adjustment', () => {
+  const r = applyRollover([
+    pk('P01', { rule: 'Carry', balance: 0 }),
+    pk('P02', { rule: 'Reset', balance: 0 }),
+    pk('P03', { rule: 'Sweep', sweepTo: 'P01', balance: 0 }),
+  ]);
+  assert.deepEqual(r.adjustments, []);
+  assert.equal(byId(r, 'P01').balance, 100);
+  assert.equal(byId(r, 'P03').balance, 100);
+});
+
+test('applyRollover leaves archived pockets untouched and counts them', () => {
+  const archived = pk('P01', { status: 'Archived', rule: 'Carry', balance: 77, carriedIn: 5 });
+  const r = applyRollover([archived, pk('P02', { balance: 10 })]);
+  assert.deepEqual(byId(r, 'P01'), archived);
+  assert.equal(r.skippedCount, 1);
+  assert.equal(r.resetCount, 1);
+  assert.equal(r.adjustments.every((a) => a.fromPocketId !== 'P01' && a.toPocketId !== 'P01'), true);
+});
+
+test('applyRollover keeps cents exact (0.10 + 0.20 swept = 0.30)', () => {
+  const r = applyRollover([
+    pk('P01', { rule: 'Sweep', sweepTo: 'P09', balance: 0.1 }),
+    pk('P02', { rule: 'Sweep', sweepTo: 'P09', balance: 0.2 }),
+    pk('P09', { rule: 'Carry', limit: 0, balance: 0 }),
+  ]);
+  assert.equal(byId(r, 'P09').balance, 0.3);
+  assert.deepEqual(r.adjustments.map((a) => a.amount), [0.1, 0.2]);
+});
+
+test('applyRollover: a Carry pocket that is also a sweep target ends with limit + own leftover + swept in', () => {
+  const r = applyRollover([
+    pk('P09', { rule: 'Carry', limit: 200, balance: 30 }),
+    pk('P01', { rule: 'Sweep', sweepTo: 'P09', balance: 25 }),
+  ]);
+  assert.equal(byId(r, 'P09').balance, 255);
+  assert.equal(byId(r, 'P09').carriedIn, 30);
+});

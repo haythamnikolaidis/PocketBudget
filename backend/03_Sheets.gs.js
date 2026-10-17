@@ -3,11 +3,12 @@
 
 import { SHEETS, REQUEST_ID_LOOKBACK_ROWS } from './00_Config.gs.js';
 import { monthKey } from './04_Rollover.gs.js';
-import { nextPocketId, nextTransactionId, isValidPocketId, balanceAfterLimitChange, escapeCell } from './01_Utils.gs.js';
+import { nextPocketId, nextTransactionId, nextAdjustmentId, isValidPocketId, balanceAfterLimitChange, escapeCell } from './01_Utils.gs.js';
 
 /** Script Properties holding the highest pocket / transaction number ever issued. */
 const PROP_LAST_POCKET = 'LAST_POCKET_NUM';
 const PROP_LAST_TXN = 'LAST_TXN_NUM';
+const PROP_LAST_ADJ = 'LAST_ADJ_NUM';
 
 function lastIssued(key) {
   return Number(PropertiesService.getScriptProperties().getProperty(key)) || 0;
@@ -29,6 +30,11 @@ export function getTransactionSheet() {
   const s = ss().getSheetByName(SHEETS.TRANSACTIONS);
   if (!s) throw new Error('Missing sheet: ' + SHEETS.TRANSACTIONS);
   return s;
+}
+
+/** The Adjustments sheet, or null when the workbook has not been migrated yet. */
+export function getAdjustmentSheet() {
+  return ss().getSheetByName(SHEETS.ADJUSTMENTS) || null;
 }
 
 export function getReportSheet() {
@@ -194,6 +200,51 @@ export function findTransactionByRequestId(requestId, lookback = REQUEST_ID_LOOK
   return null;
 }
 
+function toAdjustment(r) {
+  return {
+    id: String(r[0]),
+    timestamp: isoDate(r[1]),
+    user: String(r[2] || ''),
+    month: String(r[3] || ''),
+    type: String(r[4] || ''),
+    fromPocketId: String(r[5] || ''),
+    toPocketId: String(r[6] || ''),
+    amount: num(r[7]),
+    note: String(r[8] || ''),
+    requestId: String(r[9] || ''),
+    accountId: String(r[10] || ''),
+  };
+}
+
+/** Adjustments newest-first, optionally only those of `month` (YYYY-MM). Empty when the sheet is missing. */
+export function readAdjustments({ month } = {}) {
+  const sheet = getAdjustmentSheet();
+  if (!sheet) return [];
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const values = sheet.getRange(2, 1, lastRow - 1, 11).getValues();
+  const rows = values
+    .filter((r) => r.some((c) => c !== '' && c != null))
+    .map(toAdjustment)
+    .filter((a) => !month || a.month === month);
+  return sortNewestFirst(rows);
+}
+
+/** An already-recorded adjustment carrying this `requestId` among the newest rows, or null. */
+export function findAdjustmentByRequestId(requestId, lookback = REQUEST_ID_LOOKBACK_ROWS) {
+  if (!requestId) return null;
+  const sheet = getAdjustmentSheet();
+  if (!sheet) return null;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;
+  const first = Math.max(2, lastRow - lookback + 1);
+  const rows = sheet.getRange(first, 1, lastRow - first + 1, 11).getValues();
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (String(rows[i][9]) === requestId) return toAdjustment(rows[i]);
+  }
+  return null;
+}
+
 /** A transaction's `{ id, timestamp, pocketId, amount }` WITHOUT removing it, or null if absent. */
 export function getTransactionRecord(txnId) {
   const row = findTransactionRow(txnId);
@@ -222,15 +273,24 @@ export function writeBalance(pocketId, balance) {
   return balance;
 }
 
-export function appendPocket({ name, account, limit }) {
+/** Set a pocket's Current Balance (column E) and Carried In (column I) together, as the month rolls over. */
+export function writePocketRollover(pocketId, balance, carriedIn) {
+  const row = findPocketRow(pocketId);
+  if (!row) throw new Error('Pocket not found: ' + pocketId);
+  const sheet = getPocketSheet();
+  sheet.getRange(row, 5).setValue(balance);
+  sheet.getRange(row, 9).setValue(carriedIn);
+}
+
+export function appendPocket({ name, account, limit, rule = 'Carry', sweepTo = '', kind = 'Spend' }) {
   const sheet = getPocketSheet();
   const id = issueId(nextPocketIdFromSheet(), PROP_LAST_POCKET);
   // escapeCell: a name like =IMPORTDATA(...) would otherwise be stored as a live formula.
-  sheet.appendRow([id, escapeCell(name), escapeCell(account), limit, limit, 'Active']);
-  return { id, name, account, limit, balance: limit, status: 'Active' };
+  sheet.appendRow([id, escapeCell(name), escapeCell(account), limit, limit, 'Active', rule, sweepTo, 0, kind]);
+  return { id, name, account, limit, balance: limit, status: 'Active', rule, sweepTo, carriedIn: 0, kind };
 }
 
-export function updatePocketRow(pocketId, { name, account, limit, status }) {
+export function updatePocketRow(pocketId, { name, account, limit, status, rule, sweepTo }) {
   const row = findPocketRow(pocketId);
   if (!row) throw new Error('Pocket not found: ' + pocketId);
   const sheet = getPocketSheet();
@@ -244,6 +304,8 @@ export function updatePocketRow(pocketId, { name, account, limit, status }) {
     sheet.getRange(row, 5).setValue(balanceAfterLimitChange(cur, oldLimit, limit));
   }
   if (status != null) sheet.getRange(row, 6).setValue(status);
+  if (rule != null) sheet.getRange(row, 7).setValue(rule);
+  if (sweepTo != null) sheet.getRange(row, 8).setValue(sweepTo);
   return readPockets({ includeArchived: true }).find((p) => p.id === pocketId) || null;
 }
 
@@ -258,6 +320,30 @@ export function appendTransaction({ user, pocketId, amount, note, timestamp, req
   sheet.appendRow([id, timestamp || new Date(), user, pocketId, amount, escapeCell(note), requestId || '']);
   if (requestId) ensureRequestIdHeader(sheet);
   return id;
+}
+
+/**
+ * Append adjustment rows with a single write. Returns the new IDs in order.
+ * Each item: { timestamp, user, month, type, fromPocketId, toPocketId, amount, note, requestId, accountId }.
+ */
+export function appendAdjustments(items) {
+  const sheet = getAdjustmentSheet();
+  if (!sheet) throw new Error('Missing sheet: Adjustments. Run migrateV2().');
+  if (!items.length) return [];
+  const existing = dataRows(sheet).map((r) => String(r[0]));
+  const ids = [];
+  const rows = items.map((it) => {
+    const id = issueId(nextAdjustmentId(existing, lastIssued(PROP_LAST_ADJ)), PROP_LAST_ADJ);
+    existing.push(id);
+    ids.push(id);
+    return [
+      id, it.timestamp || new Date(), it.user, it.month, it.type,
+      it.fromPocketId || '', it.toPocketId || '', it.amount, escapeCell(it.note || ''),
+      it.requestId || '', it.accountId || '',
+    ];
+  });
+  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 11).setValues(rows);
+  return ids;
 }
 
 /**
@@ -371,6 +457,11 @@ export function ensureV2Schema() {
       range.setValues(values);
       changes.push('Pockets: filled defaults on ' + filled + ' rows');
     }
+  }
+
+  if (!readPockets().some((p) => p.kind === 'Savings')) {
+    appendPocket({ name: 'Savings', account: '', limit: 0, rule: 'Carry', kind: 'Savings' });
+    changes.push('Pockets: created Savings');
   }
 
   for (const [name, headers] of Object.entries(V2_NEW_SHEETS)) {

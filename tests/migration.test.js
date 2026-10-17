@@ -68,7 +68,7 @@ test('existing data in the old columns is untouched', () => {
   const pocketsBefore = w.sheets.Pockets._rows.map((r) => [...r]);
   const txnsBefore = w.sheets.Transactions._rows.map((r) => [...r]);
   migrateV2();
-  assert.deepEqual(w.sheets.Pockets._rows.slice(1).map((r) => r.slice(0, 6)), pocketsBefore.slice(1));
+  assert.deepEqual(w.sheets.Pockets._rows.slice(1, pocketsBefore.length).map((r) => r.slice(0, 6)), pocketsBefore.slice(1));
   assert.deepEqual(w.sheets.Pockets._rows[0].slice(0, 6), pocketsBefore[0]);
   assert.deepEqual(w.sheets.Transactions._rows.slice(1), txnsBefore.slice(1));
   assert.deepEqual(w.sheets.Transactions._rows[0].slice(0, 7), txnsBefore[0]);
@@ -114,5 +114,31 @@ test('readPockets returns the v2 fields stored on the sheet', () => {
   assert.equal(p.sweepTo, 'P09');
   assert.equal(p.carriedIn, 120);
   assert.equal(p.kind, 'Savings');
+  w.restore();
+});
+
+test('one run creates exactly one Savings pocket and a second run creates none', () => {
+  const w = oldWorkbook();
+  const changes = migrateV2();
+  assert.ok(changes.includes('Pockets: created Savings'));
+  const savings = readPockets().filter((p) => p.kind === 'Savings');
+  assert.equal(savings.length, 1);
+  assert.equal(savings[0].name, 'Savings');
+  assert.equal(savings[0].limit, 0);
+  assert.equal(savings[0].balance, 0);
+  assert.equal(savings[0].rule, 'Carry');
+  assert.ok(!migrateV2().includes('Pockets: created Savings'));
+  assert.equal(readPockets().filter((p) => p.kind === 'Savings').length, 1);
+  w.restore();
+});
+
+test('an existing Savings-kind pocket with any name prevents creation', () => {
+  const w = oldWorkbook();
+  migrateV2();
+  w.sheets.Pockets._rows.splice(3, 1);
+  w.sheets.Pockets._rows.push(v2Pocket({ id: 'P09', name: 'Rainy Day', limit: 0, balance: 50, kind: 'Savings' }));
+  const changes = migrateV2();
+  assert.ok(!changes.includes('Pockets: created Savings'));
+  assert.equal(readPockets().filter((p) => p.kind === 'Savings').length, 1);
   w.restore();
 });

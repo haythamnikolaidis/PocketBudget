@@ -13,16 +13,16 @@
 //
 // Two behaviours are load-bearing and easy to get subtly wrong:
 //
-//   1. The backend clamps a pocket's balance to its new limit (updatePocketRow
-//      writes Math.min(Math.max(cur, 0), limit)). Lowering a limit under the
-//      current balance therefore *reduces the balance*, server-side, with no
+//   1. The backend moves a pocket's balance with its limit (updatePocketRow uses
+//      balanceAfterLimitChange, floored at zero). Lowering a limit therefore
+//      *reduces the balance*, server-side, with no
 //      further prompt. Every path that can lower a limit under the balance says
 //      so in plain words before the request goes out.
 //   2. An archived pocket must not be editable here. It is filtered out of the
 //      home feed, so an edit that appeared to succeed would be a change nobody
 //      can see.
 
-import { formatMoney, isValidAmount, parseAmountText, balanceAfterLimitChange } from './format.js';
+import { formatMoney, parseAmountText, balanceAfterLimitChange } from './format.js';
 import { esc } from './render.js';
 
 /* ------------------------------------------------------------- helpers -- */
@@ -76,6 +76,42 @@ function paint(container, html) {
   container.appendChild(nodes);
 }
 
+/** The message when a pocket's rule and limit cannot go together, or null. */
+export function ruleProblem({ rule, limitCents } = {}) {
+  if (rule === 'Reset' && !(Number(limitCents) > 0)) {
+    return 'A pocket that resets needs a monthly limit above R0.';
+  }
+  return null;
+}
+
+/** Active pockets a Sweep can go to: everything except `selfId`, Savings first. */
+export function sweepTargets(state, selfId) {
+  const others = activePockets(state).filter((p) => String(p.id) !== String(selfId));
+  const isSavings = (p) => p.kind === 'Savings';
+  return [...others.filter(isSavings), ...others.filter((p) => !isSavings(p))];
+}
+
+/** A limit is usable when it is a non-negative amount with at most two decimals. */
+function limitCentsOf(raw) {
+  const n = parseAmountText(raw);
+  if (!Number.isFinite(n) || n < 0) return NaN;
+  const cents = Math.round(n * 100);
+  return Math.abs(n * 100 - cents) > 1e-9 ? NaN : cents;
+}
+
+/** The leftover rule in words: 'Carries over', 'Resets' or 'Goes to <pocket>'. */
+export function ruleLabel(pocket, pockets) {
+  const rule = (pocket && pocket.rule) || 'Reset';
+  if (rule === 'Carry') return 'Carries over';
+  if (rule === 'Sweep') {
+    const list = Array.isArray(pockets) ? pockets : [];
+    const target = list.find((p) => p && String(p.id) === String(pocket.sweepTo));
+    const name = target ? String(target.name ?? '').trim() : '';
+    return name ? `Goes to ${name}` : 'Goes to another pocket';
+  }
+  return 'Resets';
+}
+
 /* ---------------------------------------------------------------- rows -- */
 
 /**
@@ -85,7 +121,7 @@ function paint(container, html) {
  * `data-action` / `data-pocket-id` are the delegation keys the click handler
  * reads, so the handler survives a re-render without rebinding per row.
  */
-function rowHtml(p) {
+function rowHtml(p, pockets) {
   const id = esc(p.id);
   const account = String(p.account ?? '').trim();
   const accountLine = account
@@ -98,6 +134,7 @@ function rowHtml(p) {
     `<div class="min-w-0">` +
     `<p class="pb-manage__name truncate text-sm font-semibold text-slate-900">${esc(p.name)}</p>` +
     accountLine +
+    `<p class="pb-manage__rule text-xs text-slate-500">${esc(ruleLabel(p, pockets))}</p>` +
     `<p class="pb-manage__amount mt-1 text-xs tabular-nums text-slate-600">` +
     `<span class="pb-manage__balance">${esc(formatMoney(p.balance))}</span> of` +
     `<span class="pb-manage__limit"> ${esc(formatMoney(p.limit))}</span></p>` +
@@ -173,6 +210,12 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
   const archivedList = pick('manage-archived');
   const submitBtn = pick('manage-submit');
   const reasonEl = pick('manage-reason');
+  const sweepSelect = pick('manage-sweep');
+  const radios = {
+    Carry: pick('manage-rule-carry'),
+    Sweep: pick('manage-rule-sweep'),
+    Reset: pick('manage-rule-reset'),
+  };
 
   /** id of the pocket being edited, or null when the form is in create mode. */
   let editingId = null;
@@ -215,7 +258,7 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
       return;
     }
     paint(list, '<ul class="pb-manage__list space-y-3">' +
-      pockets.map(rowHtml).join('') + '</ul>');
+      pockets.map((p) => rowHtml(p, pockets)).join('') + '</ul>');
   };
 
   const renderArchived = () => {
@@ -239,16 +282,48 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
     }
   };
 
+  /** The rule picked in the form, or `fallback` when the form has no rule inputs. */
+  const readRule = (fallback) => {
+    for (const [value, input] of Object.entries(radios)) {
+      if (input && input.checked) return value;
+    }
+    return fallback;
+  };
+
+  const showRule = (rule) => {
+    for (const [value, input] of Object.entries(radios)) {
+      if (input) input.checked = value === rule;
+    }
+    if (sweepSelect && sweepSelect.classList) {
+      if (rule === 'Sweep') sweepSelect.classList.remove('hidden');
+      else sweepSelect.classList.add('hidden');
+    }
+  };
+
+  const fillSweepOptions = (selected) => {
+    if (!sweepSelect) return;
+    const options = sweepTargets(current, editingId).map((p) =>
+      `<option value="${esc(p.id)}">${esc(p.name)}</option>`);
+    paint(sweepSelect, options.join(''));
+    const wanted = sweepTargets(current, editingId).some((p) => String(p.id) === String(selected))
+      ? String(selected) : '';
+    sweepSelect.value = wanted;
+  };
+
   const clearFields = () => {
     for (const input of [nameInput, accountInput, limitInput]) {
       if (input) input.value = '';
     }
+    showRule('Carry');
+    fillSweepOptions('');
   };
 
   const loadIntoForm = (p) => {
     if (nameInput) nameInput.value = String(p.name ?? '');
     if (accountInput) accountInput.value = String(p.account ?? '');
     if (limitInput) limitInput.value = String(num(p.limit));
+    showRule(p.rule || 'Reset');
+    fillSweepOptions(p.sweepTo);
   };
 
   /**
@@ -279,8 +354,10 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
 
   /* ----------------------------------------------------------- mutations -- */
 
-  const create = async ({ name, account, limit }) => {
-    await api.createPocket({ name, account, limit });
+  const create = async ({ name, account, limit, rule, sweepTo }) => {
+    const payload = { name, account, limit, rule };
+    if (rule === 'Sweep') payload.sweepTo = sweepTo;
+    await api.createPocket(payload);
     clearFields();
     setMode(null);
     say('');
@@ -288,8 +365,13 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
     announce();
   };
 
-  const update = async ({ pocket, name, account, limit }) => {
-    await api.updatePocket({ pocketId: String(pocket.id), name, account, limit });
+  const update = async ({ pocket, name, account, limit, rule, sweepTo }) => {
+    const payload = { pocketId: String(pocket.id), name, account, limit };
+    if (rule !== (pocket.rule || 'Reset') || (rule === 'Sweep' && sweepTo !== (pocket.sweepTo || ''))) {
+      payload.rule = rule;
+      if (rule === 'Sweep') payload.sweepTo = sweepTo;
+    }
+    await api.updatePocket(payload);
     clearFields();
     setMode(null);
     say('');
@@ -391,17 +473,29 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
     const account = String((accountInput && accountInput.value) || '').trim();
     const rawLimit = limitInput && limitInput.value;
     const limit = parseAmount(rawLimit);
+    const limitCents = limitCentsOf(rawLimit);
 
     if (name === '') {
       say('Pocket name is required.');
       return;
     }
-    if (!isValidAmount(rawLimit)) {
-      say('Enter a monthly limit greater than zero.');
+    if (!Number.isFinite(limitCents)) {
+      say('Enter a monthly limit of R0 or more, with at most two decimals.');
       return;
     }
 
     const pocket = editingPocket();
+    const rule = readRule(pocket ? (pocket.rule || 'Reset') : 'Carry');
+    const problem = ruleProblem({ rule, limitCents });
+    if (problem) {
+      say(problem);
+      return;
+    }
+    const sweepTo = String((sweepSelect && sweepSelect.value) || '');
+    if (rule === 'Sweep' && sweepTo === '') {
+      say('Choose the pocket that leftovers go to.');
+      return;
+    }
     if (editingId !== null && !pocket) {
       // The pocket vanished or was archived out from under the open edit.
       clearFields();
@@ -419,8 +513,8 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
     busy = true;
     if (submitBtn) submitBtn.disabled = true;
     const done = pocket
-      ? update({ pocket, name, account, limit })
-      : create({ name, account, limit });
+      ? update({ pocket, name, account, limit, rule, sweepTo })
+      : create({ name, account, limit, rule, sweepTo });
 
     Promise.resolve(done)
       .catch((err) => { say(describe(err)); })
@@ -440,7 +534,10 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
 
   /* ---------------------------------------------------------- listeners -- */
 
+  const onRuleChange = () => showRule(readRule('Carry'));
+
   const bindings = [
+    ...Object.values(radios).map((r) => [r, 'change', onRuleChange]),
     [list, 'click', onListClick],
     [archivedList, 'click', onArchivedClick],
     [form, 'submit', onSubmit],
@@ -453,6 +550,8 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
   }
 
   render();
+  showRule('Carry');
+  fillSweepOptions('');
 
   function teardown() {
     for (const [target, type, fn] of bindings) {
@@ -464,6 +563,15 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
     busy = false;
   }
 
+  /** Load one active pocket into the form for editing, as the Edit button does. */
+  teardown.edit = (id) => {
+    const pocket = findPocket(id);
+    if (!pocket) return;
+    loadIntoForm(pocket);
+    setMode(pocket.id);
+    say('');
+  };
+
   /**
    * Take a refreshed payload WITHOUT rebuilding the screen. Re-mounting on every
    * refresh (including the one when you switch back to the app) reset the edit
@@ -474,6 +582,7 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
   teardown._applyState = (next) => {
     current = next;
     render();
+    fillSweepOptions(sweepSelect ? sweepSelect.value : '');
     if (editingId !== null && !findPocket(editingId)) {
       // The pocket being edited was archived or removed elsewhere.
       clearFields();

@@ -58,20 +58,61 @@ export function computeRunRate({ spent, limit, daysElapsed, daysInMonth }) {
   return { projected, pctUsed: Math.round(pctUsed * 100) / 100, severity };
 }
 
+const cents = (rands) => Math.round(Number(rands) * 100) || 0;
+const rands = (c) => c / 100;
+
 /**
- * Reset active pockets' balances to their monthly limit.
- * Returns `{ pockets, resetCount, skippedCount }` — the caller persists `pockets`.
+ * Apply each active pocket's leftover rule at month end. Pure: the caller persists the results.
+ *
+ *   Carry  -> balance = limit + leftover, carriedIn = leftover
+ *   Reset  -> balance = limit, carriedIn = 0 (a missing rule counts as Reset)
+ *   Sweep  -> balance = limit, carriedIn = 0, and the leftover is added to the target pocket
+ *
+ * A Sweep whose target is missing, not Active, or the pocket itself behaves as Carry.
+ * Sweeps are applied after every pocket has its new base balance. All maths is in integer cents;
+ * pockets and adjustment amounts are in rands, as `readPockets` returns them.
+ *
+ * Returns `{ pockets, adjustments, resetCount, skippedCount }`. Each adjustment is
+ * `{ type, fromPocketId?, toPocketId?, amount, note }` and exists only when something was left over.
  */
-export function applyRollover(pockets) {
+export function applyRollover(pockets, { fromMonthLabel = '' } = {}) {
+  const note = fromMonthLabel ? 'Left over from ' + fromMonthLabel : 'Left over';
+  const activeIds = new Set(pockets.filter((p) => p.status === 'Active').map((p) => p.id));
+  const adjustments = [];
+  const sweeps = [];
+  const balanceCents = new Map();
   let resetCount = 0;
   let skippedCount = 0;
+
   const out = pockets.map((p) => {
     if (p.status !== 'Active') {
       skippedCount++;
       return p;
     }
     resetCount++;
-    return { ...p, balance: p.limit };
+    const limitC = cents(p.limit);
+    const leftC = Math.max(0, cents(p.balance));
+    let rule = p.rule || 'Reset';
+    if (rule === 'Sweep' && (!p.sweepTo || p.sweepTo === p.id || !activeIds.has(p.sweepTo))) rule = 'Carry';
+
+    if (rule === 'Carry') {
+      balanceCents.set(p.id, limitC + leftC);
+      if (leftC > 0) adjustments.push({ type: 'carry', toPocketId: p.id, amount: rands(leftC), note });
+      return { ...p, carriedIn: rands(leftC) };
+    }
+    balanceCents.set(p.id, limitC);
+    if (leftC > 0) {
+      if (rule === 'Sweep') {
+        adjustments.push({ type: 'sweep', fromPocketId: p.id, toPocketId: p.sweepTo, amount: rands(leftC), note });
+        sweeps.push({ to: p.sweepTo, amountC: leftC });
+      } else {
+        adjustments.push({ type: 'forfeit', fromPocketId: p.id, amount: rands(leftC), note });
+      }
+    }
+    return { ...p, carriedIn: 0 };
   });
-  return { pockets: out, resetCount, skippedCount };
+
+  sweeps.forEach(({ to, amountC }) => balanceCents.set(to, balanceCents.get(to) + amountC));
+  const result = out.map((p) => (p.status === 'Active' ? { ...p, balance: rands(balanceCents.get(p.id)) } : p));
+  return { pockets: result, adjustments, resetCount, skippedCount };
 }
