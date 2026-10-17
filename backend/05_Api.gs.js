@@ -94,11 +94,15 @@ function checkText(value, label, required) {
 }
 
 /** Shape a stored pocket row into the API's pocket object. */
-function presentPocket(p, spentByPocket = {}) {
-  const spent = r2(p.limit - p.balance);
-  const monthSpent = spentByPocket[p.id] ?? spent;
+function presentPocket(p, spentByPocket = null) {
   const carriedIn = p.carriedIn || 0;
   const available = r2(p.limit + carriedIn);
+  // With the month's expenses in hand a pocket that has none spent nothing. Without them, what is
+  // missing from limit plus carried-in estimates it; limit minus balance alone would read carried-in
+  // money (a balance above the limit) as negative spending.
+  const monthSpent = spentByPocket
+    ? (spentByPocket[p.id] ?? 0)
+    : Math.max(0, r2(available - p.balance));
   return {
     id: p.id,
     name: p.name,
