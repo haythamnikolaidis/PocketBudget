@@ -8,6 +8,9 @@ const POCKETS = [
   { id: 'P02', name: 'Dining Out', account: 'Credit Card A', limit: 250, balance: 15, status: 'Active' },
 ];
 
+// The household list is passed in by the caller (getUsers()); the report has no names of its own.
+const USERS = ['Alex', 'Sam'];
+
 const TXNS = [
   { id: 'T1001', timestamp: '2026-10-01T14:20:00.000Z', user: 'Alex', pocketId: 'P01', amount: 65.2, note: 'Whole Foods' },
   { id: 'T1002', timestamp: '2026-10-01T18:45:00.000Z', user: 'Sam', pocketId: 'P02', amount: 42, note: 'Pizza Night' },
@@ -31,9 +34,13 @@ test('summariseSpend ignores transactions for unknown pockets', () => {
 });
 
 test('summariseSpend reports every configured user, even at zero', () => {
-  const s = summariseSpend([], POCKETS, '2026-10');
+  const s = summariseSpend([], POCKETS, '2026-10', USERS);
   assert.deepEqual(Object.keys(s.byUser).sort(), ['Alex', 'Sam']);
   assert.equal(s.total, 0);
+});
+
+test('summariseSpend invents no household members: with none passed in, none are listed', () => {
+  assert.deepEqual(summariseSpend([], POCKETS, '2026-10').byUser, {});
 });
 
 test('buildReportRows lays out budget vs actual with run-rate per pocket', () => {
@@ -55,7 +62,7 @@ test('buildReportRows lays out budget vs actual with run-rate per pocket', () =>
 test('buildReportRows appends a spouse-split block', () => {
   const rows = buildReportRows({
     pockets: POCKETS, transactions: TXNS, month: '2026-10',
-    now: new Date('2026-10-10T12:00:00Z'), daysInMonth: 31,
+    now: new Date('2026-10-10T12:00:00Z'), daysInMonth: 31, users: USERS,
   });
   const flat = rows.map((r) => r.join(' ')).join('\n');
   assert.match(flat, /SPOUSE SPLIT/);

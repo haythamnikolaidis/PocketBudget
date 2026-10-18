@@ -76,3 +76,16 @@ Type `HUMAN` = the agent stops there and a person deploys and checks the milesto
 | T66 | [Mark statement paid screen](tasks/T66-mark-paid-screen.md) | M4 | frontend | todo |
 | T67 | [M4 release prep](tasks/T67-m4-release.md) | M4 | docs | todo |
 | T68 | [HUMAN: deploy and check M4](tasks/T68-m4-human.md) | M4 | HUMAN | todo |
+| T69 | [Loans and Loan Events sheet I/O](tasks/T69-loans-io.md) | M5 | backend | todo |
+| T70 | [Loan engine: replay the events (pure)](tasks/T70-loan-replay.md) | M5 | backend | todo |
+| T71 | [Loan projection and summary (pure)](tasks/T71-loan-projection.md) | M5 | backend | todo |
+| T72 | [`createLoan` / `updateLoan` + `getState.loans`](tasks/T72-loans-api.md) | M5 | backend | todo |
+| T73 | [`addLoanEvent` API action](tasks/T73-loan-event-api.md) | M5 | backend | todo |
+| T74 | [`getLoan` API action](tasks/T74-get-loan-api.md) | M5 | backend | todo |
+| T75 | [Loans on the Monthly_Report](tasks/T75-report-loans.md) | M5 | backend | todo |
+| T76 | [Loans section on Home](tasks/T76-loans-home.md) | M5 | frontend | todo |
+| T77 | [Loan detail screen](tasks/T77-loan-detail.md) | M5 | frontend | todo |
+| T78 | [Record a rate change, instalment, extra payment or balance](tasks/T78-loan-record-form.md) | M5 | frontend | todo |
+| T79 | [Manage: add and archive loans](tasks/T79-loans-manage.md) | M5 | frontend | todo |
+| T80 | [M5 release prep](tasks/T80-m5-release.md) | M5 | docs | todo |
+| T81 | [HUMAN: deploy and check M5](tasks/T81-m5-human.md) | M5 | HUMAN | todo |

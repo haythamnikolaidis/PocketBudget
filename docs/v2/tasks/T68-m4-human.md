@@ -3,11 +3,11 @@
 **Milestone:** M4 · **Type:** HUMAN · **Depends on:** T67
 
 ## For the agent
-**Stop here.** Report: "M4 ready for human checkpoint T68. v2 is complete."
+**Stop here.** Report: "M4 ready for human checkpoint T68."
 
 ## For the human
 Merge, deploy a new backend version, run `migrateV2()` (it seeds Accounts), run the full smoke test,
-then mark T68 `done`. Later ideas are in `docs/v2/LATER.md`.
+then mark T68 `done` and restart the agent for M5.
 
 ## Verify
 ```bash

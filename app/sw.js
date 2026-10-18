@@ -23,13 +23,13 @@
  * Cache namespace for this release.
  *
  * GENERATED — do not edit by hand. `npm run build` replaces the value below
- * with a content hash of 19 precached files, and `npm run check` fails if it is stale.
+ * with a content hash of 20 precached files, and `npm run check` fails if it is stale.
  *
  * This was hand-maintained once and that was a mistake: a deploy shipped
  * without bumping it, the previous cache survived activate(), and users kept
  * running pre-fix code with no error to explain it.
  */
-const CACHE_VERSION = 'pocketbudget-ed97021e3b22';
+const CACHE_VERSION = 'pocketbudget-091130c85bcc';
 
 
 // The static app shell. Relative to the SW scope (the site root).
@@ -47,6 +47,7 @@ const PRECACHE_URLS = [
   './js/api.js',
   './js/render.js',
   './js/addform.js',
+  './js/household.js',
   './js/manage.js',
   './js/move.js',
   './js/pocket.js',

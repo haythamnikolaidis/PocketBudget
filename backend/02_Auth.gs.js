@@ -5,7 +5,7 @@
 // PRODUCT_BRIEF.md §5 decision 1. The upgrade path to verified Google ID tokens
 // is documented in IMPLEMENTATION_PLAN.md §9.
 
-import { USERS, USERS_PROPERTY } from './00_Config.gs.js';
+import { USERS_PROPERTY } from './00_Config.gs.js';
 
 /** Script Properties key holding the household token. */
 export const TOKEN_PROPERTY = 'API_TOKEN';
@@ -40,12 +40,20 @@ export function verifyToken(presented) {
 
 /**
  * The household members, from the `USERS` Script Property (comma-separated), or
- * the built-in default when it is unset or empty. Names are trimmed and
- * de-duplicated; a name cannot contain a comma.
+ * an empty list when it is unset or blank: the names are entered in the app and
+ * nothing in code supplies any. Names are trimmed and de-duplicated; a name
+ * cannot contain a comma.
  */
 export function getUsers() {
   const raw = PropertiesService.getScriptProperties().getProperty(USERS_PROPERTY);
   const names = String(raw == null ? '' : raw).split(',').map((n) => n.trim()).filter(Boolean);
-  const unique = [...new Set(names)];
-  return unique.length ? unique : [...USERS];
+  return [...new Set(names)];
+}
+
+/**
+ * Persist the household member names. The caller has already validated them
+ * (see `updateUsers` in 05_Api); this only stores the comma-separated list.
+ */
+export function setUsers(users) {
+  PropertiesService.getScriptProperties().setProperty(USERS_PROPERTY, users.join(','));
 }

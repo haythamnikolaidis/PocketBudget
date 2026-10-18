@@ -155,7 +155,7 @@ Coverage worth knowing about:
 
 - The household token lives in Apps Script Script Properties and in browser
   `localStorage`. It is never in git, and it travels in the POST body, never in a URL.
-- Household member names are the `USERS` Script Property (default `Alex,Sam`).
+- Household member names are entered in the app (Manage tab) and stored in the `USERS` Script Property. There are no built-in names.
 - Deploy the web app as **Execute as: Me** and **Who has access: Anyone**.
   Choosing "Anyone with a Google account" changes the auth model.
 - Rotating the token is one change in Script Properties.

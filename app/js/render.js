@@ -185,7 +185,7 @@ export function pocketRowHtml(p, pace = null, opts = {}) {
   const disabled = locked ? ' disabled aria-disabled="true"' : '';
   const label = locked
     ? `Add expense to ${name}, depleted`
-    : `Add expense to ${name}, ${formatMoney(pocket.balance)} left of ${formatMoney(num(pocket.available) > 0 ? pocket.available : pocket.limit)}` +
+    : `Add expense to ${name}, ${formatMoney(pocket.balance)} left of ${formatMoney(availableOf(pocket))}` +
       (status === 'ok' ? '' : `, ${STATUS_LABEL[status].toLowerCase()}`);
 
   const accountTag = account
@@ -212,6 +212,25 @@ export function pocketRowHtml(p, pace = null, opts = {}) {
 }
 
 /* ------------------------------------------------------------- summary -- */
+
+/** What one pocket has to spend this month: limit plus carried-in (the server's `available`). */
+function availableOf(p) {
+  const pocket = p || {};
+  return num(pocket.available) > 0 ? num(pocket.available) : num(pocket.limit) + num(pocket.carriedIn);
+}
+
+/**
+ * The month's whole budget for the summary, in rands: limit plus carried-in over the spending
+ * pockets listed, else the payload's totalAvailable, else its totalLimit.
+ */
+function budgetOf(list, summary) {
+  const spending = list.filter((p) => p && !isSavings(p));
+  if (spending.length > 0) {
+    const cents = spending.reduce((sum, p) => sum + Math.round(availableOf(p) * 100), 0);
+    if (cents > 0) return cents / 100;
+  }
+  return num(summary.totalAvailable) > 0 ? Number(summary.totalAvailable) : Number(summary.totalLimit);
+}
 
 /**
  * A ring of the share of the budget still left, with a marker where it should be
@@ -259,8 +278,10 @@ export function summaryHtml(summary, pockets, pace = null) {
   const s = summary || {};
   const list = Array.isArray(pockets) ? pockets : [];
   const balance = Number(s.totalBalance);
-  // The balance includes carried-in money, so measure it against limit plus carried-in.
-  const limit = num(s.totalAvailable) > 0 ? Number(s.totalAvailable) : Number(s.totalLimit);
+  // The balance includes carried-in money, so measure it against limit plus carried-in. The
+  // pockets on screen are the source: an older deployed backend sends no totalAvailable, and
+  // falling back to totalLimit then shows more money left than the budget it is "of".
+  const limit = budgetOf(list, s);
   if (!Number.isFinite(balance) || !Number.isFinite(limit) || limit <= 0) return '';
 
   const pct = Math.max(0, Math.min(100, (balance / limit) * 100));

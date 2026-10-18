@@ -110,13 +110,22 @@ test('TRANSPORT: every mutating call uses the safe header', async () => {
   await api.updatePocket({ pocketId: 'P01', limit: 900 });
   await api.createTransaction({ user: 'Sam', pocketId: 'P01', amount: 1 });
   await api.deleteTransaction('T1001');
+  await api.updateUsers(['Thandi', 'Pieter']);
 
-  assert.equal(seen.length, 4);
+  assert.equal(seen.length, 5);
   for (const opts of seen) {
     assert.equal(opts.method, 'POST');
     assert.equal(opts.headers['Content-Type'], 'text/plain;charset=utf-8');
     assert.equal(opts.redirect, 'follow');
   }
+});
+
+test('updateUsers sends the list of names under `users`, with the token', async () => {
+  const seen = [];
+  const api = apiWith(async (url, opts) => { seen.push(JSON.parse(opts.body)); return okJson({ ok: true, users: ['Thandi', 'Pieter'] }); });
+  const res = await api.updateUsers(['Thandi', 'Pieter']);
+  assert.deepEqual(seen[0], { action: 'updateUsers', users: ['Thandi', 'Pieter'], token: 'tok' });
+  assert.deepEqual(res.users, ['Thandi', 'Pieter']);
 });
 
 test('every POST body carries the token', async () => {

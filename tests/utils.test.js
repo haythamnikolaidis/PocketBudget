@@ -4,7 +4,6 @@ import {
   toCents, toDollars, parseAmountInput, isValidUser, isValidPocketId,
   nextPocketId, nextTransactionId, ok, fail, money, normaliseAmountText, balanceAfterLimitChange,
 } from '../backend/01_Utils.gs.js';
-import { USERS } from '../backend/00_Config.gs.js';
 
 test('toCents / toDollars round-trip without float drift', () => {
   assert.equal(toCents(65.2), 6520);
@@ -39,11 +38,18 @@ test('parseAmountInput rejects absurd amounts', () => {
   assert.equal(parseAmountInput(1_000_000), 100_000_000);
 });
 
-test('isValidUser accepts only configured users', () => {
-  for (const u of USERS) assert.equal(isValidUser(u), true, u);
-  assert.equal(isValidUser('Alexandra'), false);
-  assert.equal(isValidUser(''), false);
-  assert.equal(isValidUser(null), false);
+test('isValidUser accepts only the users it is given', () => {
+  const users = ['Thandi', 'Pieter'];
+  for (const u of users) assert.equal(isValidUser(u, users), true, u);
+  assert.equal(isValidUser('Thandia', users), false);
+  assert.equal(isValidUser('thandi', users), false, 'exact match');
+  assert.equal(isValidUser('', users), false);
+  assert.equal(isValidUser(null, users), false);
+});
+
+test('isValidUser has no household of its own: with no list, nobody is valid', () => {
+  assert.equal(isValidUser('Alex'), false);
+  assert.equal(isValidUser('Alex', []), false);
 });
 
 test('isValidPocketId requires the P## shape', () => {

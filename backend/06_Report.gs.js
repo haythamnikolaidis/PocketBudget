@@ -3,7 +3,6 @@
 // Spend is scoped to the report month; history survives rollover because it is
 // derived from Transactions, never from Current Balance.
 
-import { USERS } from './00_Config.gs.js';
 import { escapeCell } from './01_Utils.gs.js';
 import { computeRunRate, monthKey, localParts, daysInLocalMonth } from './04_Rollover.gs.js';
 
@@ -13,7 +12,7 @@ export function daysElapsedInMonth(now = new Date(), daysInMonth = 31) {
 }
 
 /** Total spend within `month`, broken down by pocket and by user. */
-export function summariseSpend(transactions, pockets, month, users = USERS) {
+export function summariseSpend(transactions, pockets, month, users = []) {
   const known = new Set(pockets.map((p) => p.id));
   const byPocket = {};
   const byUser = {};
@@ -70,7 +69,7 @@ export const MIN_DAYS_FOR_RUN_RATE = 3;
  * Columns of the pocket table: Month | Pocket | Bank Account | Monthly Limit | Spent |
  *          Remaining | Balance Now | Pct Used | Severity | Projected
  */
-export function buildReport({ pockets, transactions, month, now = new Date(), daysInMonth = 31, users = USERS }) {
+export function buildReport({ pockets, transactions, month, now = new Date(), daysInMonth = 31, users = [] }) {
   const spend = summariseSpend(transactions, pockets, month, users);
   const elapsed = daysElapsedInMonth(now, daysInMonth);
 
@@ -187,7 +186,7 @@ function rebuildCharts(sheet, layout, width) {
 }
 
 /** Write the report block and (re)build the native charts. Called by the daily trigger. */
-export function renderReport(sheet, { pockets, transactions, now = new Date(), users = USERS }) {
+export function renderReport(sheet, { pockets, transactions, now = new Date(), users = [] }) {
   const month = monthKey(now);
   const daysInMonth = daysInLocalMonth(now);
   const { rows, layout } = buildReport({ pockets, transactions, month, now, daysInMonth, users });

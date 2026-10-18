@@ -8,11 +8,11 @@
 //      after the writes made under it have been flushed to the sheet.
 //   4. No handler throws to the client; failures come back as { ok:false, error }.
 
-import { ACTIONS, SHEETS, LOCK_TIMEOUT_MS, MAX_NAME_LENGTH } from './00_Config.gs.js';
+import { ACTIONS, SHEETS, LOCK_TIMEOUT_MS, MAX_NAME_LENGTH, MAX_USERS, MAX_USER_NAME_LENGTH } from './00_Config.gs.js';
 import {
   toDollars, parseAmountInput, isValidUser, isValidRequestId, money, ok, fail,
 } from './01_Utils.gs.js';
-import { verifyToken, getUsers } from './02_Auth.gs.js';
+import { verifyToken, getUsers, setUsers } from './02_Auth.gs.js';
 import {
   readPockets, readTransactions, readRecentTransactions, readAdjustments, findPocketRow, writeBalance,
   writePocketRollover, getAdjustmentSheet, appendTransaction, appendPocket, updatePocketRow, archivePocketRow,
@@ -94,11 +94,15 @@ function checkText(value, label, required) {
 }
 
 /** Shape a stored pocket row into the API's pocket object. */
-function presentPocket(p, spentByPocket = {}) {
-  const spent = r2(p.limit - p.balance);
-  const monthSpent = spentByPocket[p.id] ?? spent;
+function presentPocket(p, spentByPocket = null) {
   const carriedIn = p.carriedIn || 0;
   const available = r2(p.limit + carriedIn);
+  // With the month's expenses in hand a pocket that has none spent nothing. Without them, what is
+  // missing from limit plus carried-in estimates it; limit minus balance alone would read carried-in
+  // money (a balance above the limit) as negative spending.
+  const monthSpent = spentByPocket
+    ? (spentByPocket[p.id] ?? 0)
+    : Math.max(0, r2(available - p.balance));
   return {
     id: p.id,
     name: p.name,
@@ -676,6 +680,59 @@ export function transferFunds(params) {
   }
 }
 
+/**
+ * Validate a proposed household list. Returns `{ users }` (each name trimmed) or
+ * `{ problem }` holding the error envelope. Nothing is dropped or fixed up
+ * silently: a list with a blank, duplicate or over-long name is refused whole.
+ */
+function checkUsers(input) {
+  if (!Array.isArray(input) || input.some((n) => typeof n !== 'string')) {
+    return { problem: fail('INVALID_USERS', 'users must be a list of names.') };
+  }
+  if (input.length === 0) return { problem: fail('INVALID_USERS', 'Add at least one household member.') };
+  if (input.length > MAX_USERS) {
+    return { problem: fail('INVALID_USERS', 'No more than ' + MAX_USERS + ' household members.') };
+  }
+  const users = input.map((n) => n.trim());
+  const seen = new Set();
+  for (const name of users) {
+    if (!name) return { problem: fail('INVALID_USERS', 'A household member name is blank.') };
+    if (name.includes(',')) {
+      return { problem: fail('INVALID_USERS', 'A name cannot contain a comma: ' + name) };
+    }
+    if (name.length > MAX_USER_NAME_LENGTH) {
+      return { problem: fail('INVALID_USERS', 'A name must be ' + MAX_USER_NAME_LENGTH + ' characters or fewer: ' + name) };
+    }
+    const key = name.toLowerCase();
+    if (seen.has(key)) return { problem: fail('INVALID_USERS', 'Duplicate name: ' + name) };
+    seen.add(key);
+  }
+  return { users };
+}
+
+/**
+ * Replace the household member names. The list is stored in the `USERS` Script
+ * Property, so it is the one place names are set; `getState` and every user
+ * check read it back through `getUsers()`.
+ */
+export function updateUsers(params) {
+  if (!verifyToken(params.token)) return fail('UNAUTHORIZED', 'Invalid or missing token.');
+
+  const { users, problem } = checkUsers(params.users);
+  if (problem) return problem;
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(LOCK_TIMEOUT_MS)) {
+    return fail('BUSY', 'Another update is in progress. Please try again.');
+  }
+  try {
+    setUsers(users);
+    return ok({ users: getUsers() });
+  } finally {
+    unlock(lock);
+  }
+}
+
 /* ------------------------------------------------------------- dispatch -- */
 
 const HANDLERS = {
@@ -687,6 +744,7 @@ const HANDLERS = {
   deleteTransaction,
   transferFunds,
   getPocket,
+  updateUsers,
 };
 
 /**

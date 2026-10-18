@@ -13,7 +13,7 @@ function withApi(pocketRows = SAMPLE_POCKETS, txnRows = SAMPLE_TXNS, adjSheet = 
   const ss = {
     getSheetByName: (n) => (n === 'Pockets' ? wb.pockets : n === 'Transactions' ? wb.txns : n === 'Monthly_Report' ? wb.report : n === 'Adjustments' ? adjSheet : null),
   };
-  const props = createProps({ API_TOKEN: TOKEN });
+  const props = createProps({ API_TOKEN: TOKEN, USERS: 'Alex,Sam' });
   const lock = { _held: false, tryLock() { this._held = true; return true; }, releaseLock() { this._held = false; } };
   const restore = installGlobals({
     ss,
