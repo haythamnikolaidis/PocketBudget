@@ -213,7 +213,7 @@ export function mountMove({ root, api, getState, getUser, onDone, toast, doc } =
     const note = noteEl ? String(noteEl.value || '').trim() : '';
     const user = typeof getUser === 'function' ? String(getUser() ?? '') : '';
     if (!user) {
-      notify('No household member is set up, so this move cannot be recorded.', 'error');
+      notify('Add your household on the Manage tab so this move can be recorded.', 'error');
       return;
     }
     const payload = { user, fromPocketId, toPocketId, amount, note };

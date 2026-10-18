@@ -296,6 +296,27 @@
         </button>
       </form>
 
+      <h2 class="mt-8 text-sm font-semibold uppercase tracking-wide text-slate-400">Household</h2>
+      <p class="mt-2 text-xs text-slate-500">
+        The people who log expenses. A name stays on the expenses it was used for, so it cannot be renamed.
+      </p>
+      <div id="household-list" class="mt-3"></div>
+      <form id="household-form" class="mt-3 flex gap-2" novalidate>
+        <input id="household-name" name="name" type="text" placeholder="Name" autocomplete="off" maxlength="30"
+               class="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm
+                      focus:border-accent focus:outline-none">
+        <button type="submit" id="household-add"
+                class="rounded-lg border border-slate-500 bg-slate-800 px-4 py-2.5 text-sm font-medium
+                       text-slate-100 hover:bg-slate-700">
+          Add
+        </button>
+      </form>
+      <p id="household-reason" class="hidden mt-3 rounded-lg bg-rose-500/15 px-3 py-2 text-sm text-rose-200"></p>
+      <button type="button" id="household-save"
+              class="mt-3 w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-ink disabled:opacity-50">
+        Save household
+      </button>
+
       <h2 class="mt-8 text-sm font-semibold uppercase tracking-wide text-slate-400">Connection</h2>
       <p class="mt-2 text-xs text-slate-500">
         Use this after the household token is changed, or to point the app at a different Sheet.

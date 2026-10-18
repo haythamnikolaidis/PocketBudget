@@ -1,5 +1,6 @@
 // app/js/manage.js
-// The pocket management screen: create, rename, re-limit, archive.
+// The pocket management screen: create, rename, re-limit, archive. It also holds
+// the Household section (who may log expenses); the pure rules live in household.js.
 //
 // ---------------------------------------------------------------------------
 // WHY THERE IS NO HARD DELETE ANYWHERE IN THIS FILE
@@ -24,6 +25,7 @@
 
 import { formatMoney, parseAmountText, balanceAfterLimitChange } from './format.js';
 import { esc } from './render.js';
+import { householdNames, addName, removeName, sameNames, householdHtml } from './household.js';
 
 /* ------------------------------------------------------------- helpers -- */
 
@@ -211,6 +213,11 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
   const submitBtn = pick('manage-submit');
   const reasonEl = pick('manage-reason');
   const sweepSelect = pick('manage-sweep');
+  const householdList = pick('household-list');
+  const householdForm = pick('household-form');
+  const householdInput = pick('household-name');
+  const householdReason = pick('household-reason');
+  const householdSave = pick('household-save');
   const radios = {
     Carry: pick('manage-rule-carry'),
     Sweep: pick('manage-rule-sweep'),
@@ -220,6 +227,12 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
   /** id of the pocket being edited, or null when the form is in create mode. */
   let editingId = null;
   let busy = false;
+
+  /** Household names as the server has them, and the list being edited. */
+  const savedUsers = (s) => householdNames(s && s.summary && s.summary.users);
+  let serverUsers = savedUsers(current);
+  let draftUsers = serverUsers;
+  let savingUsers = false;
 
   /* ------------------------------------------------------------- state -- */
 
@@ -246,6 +259,66 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
   };
 
   const findPocket = (id) => activePockets(current).find((p) => String(p.id) === String(id));
+
+  /* --------------------------------------------------------- household -- */
+
+  const sayHousehold = (message) => {
+    if (!householdReason) return;
+    householdReason.textContent = message || '';
+    if (householdReason.classList) {
+      if (message && typeof householdReason.classList.remove === 'function') householdReason.classList.remove('hidden');
+      else if (!message && typeof householdReason.classList.add === 'function') householdReason.classList.add('hidden');
+    }
+  };
+
+  const renderHousehold = () => {
+    paint(householdList, householdHtml(draftUsers));
+    if (householdSave) householdSave.disabled = savingUsers || sameNames(draftUsers, serverUsers);
+  };
+
+  const onHouseholdSubmit = (ev) => {
+    if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
+    if (savingUsers) return;
+    const result = addName(draftUsers, householdInput && householdInput.value);
+    if (result.error) {
+      sayHousehold(result.error);
+      return;
+    }
+    draftUsers = result.list;
+    if (householdInput) householdInput.value = '';
+    sayHousehold('');
+    renderHousehold();
+  };
+
+  const onHouseholdClick = (ev) => {
+    const btn = ev && ev.target && typeof ev.target.closest === 'function'
+      ? ev.target.closest('[data-action="remove-user"]')
+      : null;
+    if (!btn || savingUsers) return;
+    draftUsers = removeName(draftUsers, String((btn.dataset || {}).name || ''));
+    sayHousehold('');
+    renderHousehold();
+  };
+
+  const onHouseholdSave = () => {
+    if (savingUsers) return;
+    savingUsers = true;
+    renderHousehold();
+    Promise.resolve()
+      .then(() => api.updateUsers(draftUsers))
+      .then((res) => {
+        serverUsers = householdNames(res && res.users);
+        draftUsers = serverUsers;
+        sayHousehold('');
+        notify('Household saved.');
+        announce();
+      })
+      .catch((err) => { sayHousehold(describe(err)); })
+      .finally(() => {
+        savingUsers = false;
+        renderHousehold();
+      });
+  };
 
   /* ------------------------------------------------------------ render -- */
 
@@ -542,6 +615,9 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
     [archivedList, 'click', onArchivedClick],
     [form, 'submit', onSubmit],
     [limitInput, 'input', onLimitInput],
+    [householdForm, 'submit', onHouseholdSubmit],
+    [householdList, 'click', onHouseholdClick],
+    [householdSave, 'click', onHouseholdSave],
   ];
   for (const [target, type, fn] of bindings) {
     if (target && typeof target.addEventListener === 'function') {
@@ -550,6 +626,7 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
   }
 
   render();
+  renderHousehold();
   showRule('Carry');
   fillSweepOptions('');
 
@@ -582,6 +659,11 @@ export function mountManage({ root, api, state, onChanged, toast } = {}) {
   teardown._applyState = (next) => {
     current = next;
     render();
+    // Take the server's household unless names are being edited right now.
+    const clean = sameNames(draftUsers, serverUsers);
+    serverUsers = savedUsers(next);
+    if (clean) draftUsers = serverUsers;
+    renderHousehold();
     fillSweepOptions(sweepSelect ? sweepSelect.value : '');
     if (editingId !== null && !findPocket(editingId)) {
       // The pocket being edited was archived or removed elsewhere.
