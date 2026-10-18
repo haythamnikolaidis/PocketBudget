@@ -135,6 +135,7 @@ backend/04_Rollover.gs.js  monthKey, localParts, shouldRollover, applyRollover (
 backend/05_Api.gs.js       handlers + HANDLERS map + handleRequest
 backend/06_Report.gs.js    Monthly_Report
 backend/07_Entry.gs.js     doGet/doPost, dailyRollover, setup()
+backend/09_Loans.gs.js     loan engine: replayLoan, projectLoan, summariseLoan (pure)
 tests/helpers/             fakeSheet.js, fixtures.js (freshWorkbook), appsScriptGlobals.js, fakeBrowser.js
 ```
 
@@ -179,6 +180,15 @@ J Request ID | K Account ID`.
 **Accounts** (new): `A Account ID (AC01…) | B Name | C Type (bank/card/cash) | D Statement Day
 (1–28) | E Due Day (1–28) | F Credit Limit | G Status (Active/Archived)`.
 
+**Loans** (new): `A Loan ID (LN01…) | B Name | C Opening Balance (rands) | D Opening Date (YYYY-MM-DD)
+| E Billing Day (1–28) | F Debit Order Day (1–28) | G Status (Active/Archived)`. The opening balance is
+the amount owed at the **end** of the opening date.
+
+**Loan Events** (new): `A Event ID (LE1001…) | B Timestamp | C User | D Loan ID | E Effective Date
+(YYYY-MM-DD) | F Type (rate/instalment/extra/balance) | G Value | H Note | I Request ID`. Value is
+integer **basis points** for `rate` (1075 = 10.75% a year) and **rands** for the other three types.
+Rows are never edited by the app; the loan's state is always replayed from them.
+
 ## 8. Decisions already made (don't revisit)
 
 - New pockets default to **Carry**, with no cap. Pockets that existed before v2 stay **Reset**.
@@ -189,3 +199,22 @@ J Request ID | K Account ID`.
 - Paying a card **never** changes a pocket.
 - Undo for deletes is a 6-second delay on the phone before the delete is sent.
 - Editing earlier months is out of scope.
+- A loan is its own record (Loans sheet) and **never changes a pocket**. Pockets are budget envelopes;
+  the loan is paid by debit order from the bank, plus the odd extra payment such as a bonus.
+- There can be several loans (mortgage, car loan, …); every loan uses the same screens.
+- Interest accrues **daily** on the outstanding balance at annual rate ÷ 365 (also in leap years) and
+  is **billed monthly** on the loan's billing day, rounded to cents once per billing period.
+- Rates, instalments, extra payments and balance corrections are **effective-dated events**. Each day
+  uses the rate in force on that day, so a rate change never rewrites earlier months.
+- The debit-order instalment is assumed paid on the debit-order day every month; nobody enters it.
+  Extra payments and balance corrections are entered by hand.
+- A balance correction states the whole amount owed at the end of its date (as on a statement); the
+  replay continues from there.
+- A mistaken event is fixed by entering a newer one (for the same date, the later row wins) or by
+  deleting the row in the sheet. The app has no edit or delete for loan events.
+- One projection only: today's balance, the current rate and the current instalment, no extras.
+  It gives a paid-off date and the interest still to pay, or "won't be paid off at this instalment".
+  What-if comparisons are in `LATER.md`.
+- Effective dates can't be in the future.
+- `Monthly_Report` has one line per active loan: closing balance, interest charged this month, paid
+  this month (instalments + extras) and the projected paid-off date.
