@@ -40,7 +40,7 @@ function withApi(pocketRows = [], txnRows = []) {
   const lock = exclusiveLock();
   const restore = installGlobals({
     ss,
-    props: createProps({ API_TOKEN: TOKEN }),
+    props: createProps({ API_TOKEN: TOKEN, USERS: 'Alex,Sam' }),
     lockService: { getScriptLock: () => lock, getUserLock: () => lock },
   });
   return { wb, lock, restore };
@@ -127,7 +127,7 @@ test('INVARIANT 2: a second request is rejected as BUSY while the lock is held',
   const ss = { getSheetByName: (n) => (n === 'Pockets' ? wb.pockets : n === 'Transactions' ? wb.txns : wb.report) };
   const lock = exclusiveLock();
   const restore = installGlobals({
-    ss, props: createProps({ API_TOKEN: TOKEN }),
+    ss, props: createProps({ API_TOKEN: TOKEN, USERS: 'Alex,Sam' }),
     lockService: { getScriptLock: () => lock, getUserLock: () => lock },
   });
 
@@ -195,7 +195,7 @@ test('deleteTransaction refunds the full amount even above the pocket limit', ()
   const ss = { getSheetByName: (n) => (n === 'Pockets' ? wbSeed.pockets : n === 'Transactions' ? wbSeed.txns : wbSeed.report) };
   const lock = exclusiveLock();
   const restore = installGlobals({
-    ss, props: createProps({ API_TOKEN: TOKEN }),
+    ss, props: createProps({ API_TOKEN: TOKEN, USERS: 'Alex,Sam' }),
     lockService: { getScriptLock: () => lock, getUserLock: () => lock },
   });
 

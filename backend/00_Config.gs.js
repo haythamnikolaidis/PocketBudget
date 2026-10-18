@@ -1,14 +1,10 @@
 // CANONICAL SOURCE. `backend/*.gs` is generated from this file by `npm run build`.
 
 /**
- * Household members allowed to log expenses. Display names, exact match.
- * This is only the DEFAULT: the live list is the `USERS` Script Property
- * (comma-separated, e.g. "Thandi,Pieter"), read by getUsers() in 02_Auth, so
- * renaming the household does not mean editing code and redeploying.
+ * Script Properties key holding the comma-separated household member names. The
+ * names are entered in the app (the `updateUsers` action); nothing in code names
+ * them, and until they are set the household list is empty.
  */
-export const USERS = ['Alex', 'Sam'];
-
-/** Script Properties key holding the comma-separated household member names. */
 export const USERS_PROPERTY = 'USERS';
 
 /** Sheet tab names. Reference these everywhere; never hard-code a sheet name in logic. */
@@ -26,6 +22,7 @@ export const ACTIONS = [
   'createPocket', 'updatePocket',
   'createTransaction', 'deleteTransaction',
   'transferFunds', 'getPocket',
+  'updateUsers',
 ];
 
 /** Version of the deployed backend; returned by ping/getState so the client can warn on mismatch. */
@@ -55,6 +52,12 @@ export const CURRENCY_SYMBOL = 'R';
 
 /** Longest pocket name / bank account text accepted, in characters. */
 export const MAX_NAME_LENGTH = 60;
+
+/** Most household members the API will store. */
+export const MAX_USERS = 10;
+
+/** Longest household member name accepted, in characters. */
+export const MAX_USER_NAME_LENGTH = 30;
 
 /** Largest single expense the API will accept, in cents (R1,000,000). */
 export const MAX_AMOUNT_CENTS = 100000000;

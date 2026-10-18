@@ -37,7 +37,7 @@ function setup({ pockets = POCKETS } = {}) {
   };
   const restore = installGlobals({
     ss,
-    props: createProps({ API_TOKEN: TOKEN }),
+    props: createProps({ API_TOKEN: TOKEN, USERS: 'Alex,Sam' }),
     lockService: { getScriptLock: () => lock, getUserLock: () => lock },
   });
   globalThis.SpreadsheetApp.flush = () => { events.push('flush'); };

@@ -1,6 +1,6 @@
 // CANONICAL SOURCE. Pure functions only — no SpreadsheetApp, no Date text parsing.
 
-import { USERS, SERVER_VERSION, MAX_AMOUNT_CENTS, CURRENCY_SYMBOL } from './00_Config.gs.js';
+import { SERVER_VERSION, MAX_AMOUNT_CENTS, CURRENCY_SYMBOL } from './00_Config.gs.js';
 
 /* ------------------------------------------------------------------ money -- */
 
@@ -101,7 +101,8 @@ export function escapeCell(value) {
 
 /* ------------------------------------------------------------ validation -- */
 
-export function isValidUser(name, users = USERS) {
+/** True when `name` is one of `users`, the live household list (callers pass `getUsers()`). */
+export function isValidUser(name, users = []) {
   return typeof name === 'string' && users.includes(name);
 }
 

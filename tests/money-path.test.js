@@ -33,7 +33,7 @@ function setup({ pockets = [['P01', 'Groceries', 'Chase', 800, 100, 'Active']], 
   };
   const restore = installGlobals({
     ss,
-    props: createProps({ API_TOKEN: TOKEN, ...props }),
+    props: createProps({ API_TOKEN: TOKEN, USERS: 'Alex,Sam', ...props }),
     lockService: { getScriptLock: () => lock, getUserLock: () => lock },
   });
   globalThis.SpreadsheetApp.flush = () => { events.push('flush'); };
@@ -457,20 +457,28 @@ test('USERS: the household comes from the USERS Script Property, not from code',
   s.restore();
 });
 
-test('USERS: with the property unset or blank the built-in default applies', () => {
-  for (const props of [{}, { USERS: '' }, { USERS: ' , ' }]) {
-    const s = setup({ props });
-    assert.deepEqual(viaDispatcher('getState', {}).summary.users, ['Alex', 'Sam']);
+test('USERS: with the property unset or blank there are no household members (no built-in names)', () => {
+  for (const value of [null, '', ' , ']) {
+    const s = setup();
+    const props = globalThis.PropertiesService.getScriptProperties();
+    if (value === null) props.deleteProperty('USERS'); else props.setProperty('USERS', value);
+    assert.deepEqual(viaDispatcher('getState', {}).summary.users, []);
+    assert.equal(spend().error, 'INVALID_USER', 'nobody can log an expense until names are set');
     s.restore();
   }
 });
 
-test('USERS: setup() publishes the default so it can be edited in Script Properties', () => {
+test('USERS: setup() seeds no names; they are set in the app', () => {
   const s = setup();
+  globalThis.PropertiesService.getScriptProperties().deleteProperty('USERS');
+  const logged = [];
+  globalThis.Logger = { log: (m) => logged.push(m) };
   globalThis.ScriptApp = { getProjectTriggers: () => [], deleteTrigger() {}, newTrigger: () => { const b = { timeBased: () => b, everyDays: () => b, atHour: () => b, create() {} }; return b; } };
   try {
     setupFn();
-    assert.equal(globalThis.PropertiesService.getScriptProperties().getProperty('USERS'), 'Alex,Sam');
+    assert.equal(globalThis.PropertiesService.getScriptProperties().getProperty('USERS'), null);
+    assert.ok(logged.some((m) => /Manage tab/.test(m)), 'the log line points at the app');
+    assert.ok(!logged.some((m) => /Alex|Sam|USERS Script Property/.test(m)));
   } finally { delete globalThis.ScriptApp; }
   s.restore();
 });

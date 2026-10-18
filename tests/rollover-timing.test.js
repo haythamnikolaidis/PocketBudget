@@ -29,7 +29,7 @@ function setup({ pockets, txns = [], props = {}, busy = false, adjustments = fal
     tryLock() { lockCalls.tryLock++; if (busy || held) return false; held = true; return true; },
     releaseLock() { held = false; },
   };
-  const scriptProps = createProps({ API_TOKEN: TOKEN, ...props });
+  const scriptProps = createProps({ API_TOKEN: TOKEN, USERS: 'Alex,Sam', ...props });
   const restore = installGlobals({
     ss,
     props: scriptProps,
